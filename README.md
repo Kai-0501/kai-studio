@@ -18,6 +18,9 @@ outputs, and memory stay local.
   hybrid retrieval
 - **Local dictation** using Parakeet TDT 0.6B v2
 - **Local image generation** through Z-Image Turbo
+- **Owned-repository GitHub vault** that syncs only repositories belonging to
+  the authenticated account, excludes forks, and hands coding work to the
+  local Gemma 4 31B model
 - **Searchable workflow library** with:
   - Meeting Intelligence
   - Editorial Intelligence
@@ -41,6 +44,7 @@ Next.js application + local API routes
         ├── Ollama → Gemma chat and reasoning models
         ├── Ollama → Z-Image Turbo
         ├── FluidAudio → Parakeet speech-to-text
+        ├── GitHub CLI → owned repository metadata and README cache
         └── Local filesystem + SQLite → history, settings and KaiLore memory
 ```
 

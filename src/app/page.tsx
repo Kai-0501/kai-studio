@@ -5,19 +5,22 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import type { SavedRun } from "@/types/run";
 import type { GenerationPerformance } from "@/types/performance";
+import type { GitHubVaultStatus } from "@/types/github";
 
 export default function DashboardPage() {
   const [runs, setRuns] = useState<SavedRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [performance, setPerformance] = useState<GenerationPerformance[]>([]);
+  const [github, setGitHub] = useState<GitHubVaultStatus | null>(null);
 
   useEffect(() => {
-    Promise.all([fetch("/api/runs"), fetch("/api/performance")])
-      .then(async ([runsResponse, performanceResponse]) => {
+    Promise.all([fetch("/api/runs"), fetch("/api/performance"), fetch("/api/github")])
+      .then(async ([runsResponse, performanceResponse, githubResponse]) => {
         setRuns((await runsResponse.json()) as SavedRun[]);
         setPerformance(
           (await performanceResponse.json()) as GenerationPerformance[],
         );
+        setGitHub((await githubResponse.json()) as GitHubVaultStatus);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -57,10 +60,10 @@ export default function DashboardPage() {
 
           <div className="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
-              label="Saved runs"
-              value={loading ? "—" : String(runs.length)}
-              detail="Stored on this Mac"
-              href="/history"
+              label="GitHub repos"
+              value={loading ? "—" : github?.connected ? String(github.repositoryCount) : "Connect"}
+              detail={github?.connected ? `Owned by ${github.login}` : "Link your GitHub account"}
+              href="/github"
             />
             <StatCard
               label="Latest speed"
@@ -173,8 +176,8 @@ export default function DashboardPage() {
                   Privacy status
                 </div>
                 <p className="mt-3 text-sm leading-6 text-slate-400">
-                  Ollama processes every prompt locally. No transcript or model
-                  output leaves this Mac.
+                  Ollama processes every prompt locally. GitHub metadata and
+                  README files sync only from repositories you own.
                 </p>
                 <p className="mt-4 text-xs text-slate-600">
                   Cloud tokens used: 0

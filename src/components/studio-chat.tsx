@@ -48,12 +48,18 @@ const modelOptions = [
   { value: "gemma4:31b-mlx", label: "Gemma 4 31B", detail: "Deep" },
 ];
 
-export function StudioChat() {
-  const [model, setModel] = useState("gemma4:26b-mlx");
+export function StudioChat({
+  initialPrompt = "",
+  lockedModel,
+}: {
+  initialPrompt?: string;
+  lockedModel?: string;
+} = {}) {
+  const [model, setModel] = useState(lockedModel ?? "gemma4:26b-mlx");
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialPrompt);
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState("");
@@ -79,7 +85,7 @@ export function StudioChat() {
         }>,
       )
       .then((settings) => {
-        if (modelOptions.some((option) => option.value === settings.defaultModel)) {
+        if (!lockedModel && modelOptions.some((option) => option.value === settings.defaultModel)) {
           setModel(settings.defaultModel!);
         }
         setLongTermMemoryEnabled(settings.longTermMemoryEnabled === true);
@@ -87,7 +93,7 @@ export function StudioChat() {
       .catch(() => {
         // Keep 26B as the balanced chat default.
       });
-  }, []);
+  }, [lockedModel]);
 
   useEffect(() => {
     fetch("/api/memory")
@@ -829,7 +835,7 @@ export function StudioChat() {
                     setComposerMode("image");
                     setImages([]);
                   }}
-                  disabled={isRunning || isRecording || isTranscribing}
+                  disabled={Boolean(lockedModel) || isRunning || isRecording || isTranscribing}
                   className={`rounded-full px-3 py-1.5 text-xs transition ${
                     composerMode === "image"
                       ? "border border-sky-400/25 bg-sky-400/15 text-sky-200 shadow-[inset_0_1px_0_rgba(125,211,252,0.12)] backdrop-blur-md"
@@ -893,10 +899,10 @@ export function StudioChat() {
                 <select
                   value={model}
                   onChange={(event) => setModel(event.target.value)}
-                  disabled={isRunning || isRecording || isTranscribing}
+                  disabled={Boolean(lockedModel) || isRunning || isRecording || isTranscribing}
                   className="appearance-none rounded-full border border-sky-400/25 bg-sky-400/10 py-2 pl-3 pr-7 text-xs font-medium text-sky-200 outline-none transition hover:bg-sky-400/15 disabled:opacity-50"
                 >
-                  {modelOptions.map((option) => (
+                  {(lockedModel ? modelOptions.filter((option) => option.value === lockedModel) : modelOptions).map((option) => (
                     <option
                       key={option.value}
                       value={option.value}
@@ -937,7 +943,9 @@ export function StudioChat() {
             ? "Temporary chat · Kai Memory stays active · nothing is saved to History."
             : composerMode === "image"
             ? "Z-Image Turbo creates images locally on this Mac."
-            : `${selectedModel.label} runs locally. Check important information.`}
+            : lockedModel
+              ? "GitHub coding handoff · fixed to the local 31B model."
+              : `${selectedModel.label} runs locally. Check important information.`}
         </p>
       </div>
     </section>

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const navigation = [
   { label: "Dashboard", icon: "⌂", href: "/" },
   { label: "Chat", icon: "✦", href: "/chat" },
+  { label: "GitHub", icon: "⌘", href: "/github" },
   { label: "Library", icon: "▦", href: "/library" },
   {
     label: "Runner",
@@ -38,13 +39,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               pathname === item.href ||
               (item.label === "Runner" && pathname.startsWith("/workflows/")) ||
               (item.label === "History" && pathname.startsWith("/history/"));
+            const isActive = active || (item.label === "GitHub" && pathname.startsWith("/github/"));
 
             return (
               <Link
                 key={item.label}
                 href={item.href}
                 className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
-                  active
+                  isActive
                     ? "bg-sky-500/15 text-sky-300"
                     : "text-slate-400 hover:bg-white/5 hover:text-white"
                 }`}
@@ -62,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Local mode
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            Your data stays on this Mac.
+            AI inference stays on this Mac.
           </p>
         </div>
       </aside>
