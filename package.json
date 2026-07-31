@@ -1,17 +1,59 @@
 {
-  "name": "promptdeck",
+  "name": "kai-studio",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --experimental-strip-types --experimental-loader ./tests/alias-loader.mjs --test tests/*.test.mjs",
+    "desktop:prepare": "node electron/prepare.mjs",
+    "desktop:build": "npm run build && npm run desktop:prepare && electron-builder --mac dir",
+    "desktop:dmg": "npm run build && npm run desktop:prepare && electron-builder --mac dmg"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.kai.kai-studio",
+    "productName": "Kai Studio",
+    "asar": true,
+    "asarUnpack": [
+      ".next/standalone/**"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/audio/fluidaudiocli",
+        "to": "audio/fluidaudiocli"
+      }
+    ],
+    "files": [
+      "electron/**/*",
+      ".next/standalone/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Kai Studio uses the microphone only when you choose to dictate a message."
+      },
+      "target": [
+        "dir",
+        "dmg"
+      ]
+    },
+    "dmg": {
+      "title": "Kai Studio",
+      "artifactName": "Kai-Studio-${version}-${arch}.${ext}"
+    }
   },
   "dependencies": {
     "next": "16.2.12",
+    "pdfjs-dist": "^6.1.200",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -20,6 +62,8 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
+    "electron": "^37.2.3",
+    "electron-builder": "^26.0.12",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

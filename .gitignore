@@ -19,10 +19,24 @@
 
 # production
 /build
+/dist/
+/staging/
 
 # misc
 .DS_Store
 *.pem
+.promptdeck/
+.npm-cache/
+
+# Kai Studio local data and generated desktop artifacts
+*.dmg
+*.app
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+memory.json
+memory.tmp.json
+/vendor/audio/fluidaudiocli
 
 # debug
 npm-debug.log*
