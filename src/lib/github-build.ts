@@ -8,13 +8,15 @@ const ignored = new Set([".git", "node_modules", ".next", "dist", "build", "cove
 const textExtensions = new Set([".c", ".cpp", ".css", ".go", ".html", ".java", ".js", ".json", ".jsx", ".md", ".mjs", ".py", ".rs", ".sh", ".sql", ".swift", ".toml", ".ts", ".tsx", ".txt", ".yaml", ".yml"]);
 
 export type PendingBuild = { id: string; owner: string; repo: string; defaultBranch: string; summary: string; securitySummary: string; files: { path: string; content: string }[]; verification: string[]; createdAt: string };
+export type AppliedBuild = { buildId: string; owner: string; repo: string; branch: string; summary: string; checks: CheckResult[]; commit: string; createdAt: string };
+export type CheckResult = { name: string; command: string; passed: boolean; output: string; durationMs: number };
 
 export function dataDirectory() {
   return process.env.KAI_STUDIO_DATA_DIR ?? path.join(process.env.HOME ?? process.cwd(), ".promptdeck");
 }
 
 export async function command(file: string, args: string[], cwd?: string) {
-  return execFileAsync(file, args, { cwd, timeout: 120_000, maxBuffer: 32 * 1024 * 1024 });
+  return execFileAsync(file, args, { cwd, timeout: 600_000, maxBuffer: 8 * 1024 * 1024 });
 }
 
 export async function checkout(owner: string, repo: string) {
@@ -24,7 +26,7 @@ export async function checkout(owner: string, repo: string) {
   try {
     await stat(path.join(target, ".git"));
     await command("/usr/bin/git", ["fetch", "origin"], target);
-    await command("/usr/bin/git", ["reset", "--hard", "origin/HEAD"], target);
+    await command("/usr/bin/git", ["checkout", "--detach", "origin/HEAD"], target);
   } catch {
     await command("/opt/homebrew/bin/gh", ["repo", "clone", `${owner}/${repo}`, target, "--", "--filter=blob:none"]);
   }
@@ -73,4 +75,54 @@ export async function savePendingBuild(build: PendingBuild) {
 export async function readPendingBuild(id: string) {
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid build approval.");
   return JSON.parse(await readFile(path.join(dataDirectory(), "pending-github-builds", `${id}.json`), "utf8")) as PendingBuild;
+}
+
+export async function prepareBuildBranch(root: string, defaultBranch: string, buildId: string) {
+  const branch = `kai-studio/build-${buildId.slice(0, 8)}`;
+  await command("/usr/bin/git", ["fetch", "origin", defaultBranch], root);
+  await command("/usr/bin/git", ["checkout", "-B", branch, `origin/${defaultBranch}`], root);
+  return branch;
+}
+
+export async function projectChecks(root: string): Promise<{ name: string; file: string; args: string[] }[]> {
+  try {
+    const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")) as { scripts?: Record<string, string> };
+    const scripts = manifest.scripts || {};
+    const names = ["lint", "typecheck", "test", "test:e2e", "build"].filter((name) => typeof scripts[name] === "string");
+    return names.map((name) => ({ name, file: "/opt/homebrew/bin/npm", args: ["run", name, "--if-present"] }));
+  } catch {
+    if (await exists(path.join(root, "Cargo.toml"))) return [{ name: "cargo-test", file: "/opt/homebrew/bin/cargo", args: ["test"] }];
+    if (await exists(path.join(root, "Package.swift"))) return [{ name: "swift-test", file: "/usr/bin/swift", args: ["test"] }];
+    if (await exists(path.join(root, "pyproject.toml"))) return [{ name: "pytest", file: "/opt/homebrew/bin/python3", args: ["-m", "pytest"] }];
+    return [];
+  }
+}
+
+async function exists(target: string) { try { await stat(target); return true; } catch { return false; } }
+
+export async function runProjectChecks(root: string): Promise<CheckResult[]> {
+  const checks = await projectChecks(root);
+  const results: CheckResult[] = [];
+  for (const check of checks) {
+    const started = Date.now();
+    try {
+      const result = await command(check.file, check.args, root);
+      results.push({ name: check.name, command: `${path.basename(check.file)} ${check.args.join(" ")}`, passed: true, output: `${result.stdout || ""}${result.stderr || ""}`.slice(-12_000), durationMs: Date.now() - started });
+    } catch (error) {
+      const failure = error as { stdout?: string; stderr?: string; message?: string };
+      results.push({ name: check.name, command: `${path.basename(check.file)} ${check.args.join(" ")}`, passed: false, output: `${failure.stdout || ""}${failure.stderr || ""}${failure.message || ""}`.slice(-12_000), durationMs: Date.now() - started });
+    }
+  }
+  return results;
+}
+
+export async function saveAppliedBuild(build: AppliedBuild) {
+  const directory = path.join(dataDirectory(), "applied-github-builds");
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, `${build.buildId}.json`), JSON.stringify(build), "utf8");
+}
+
+export async function readAppliedBuild(id: string) {
+  if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid build approval.");
+  return JSON.parse(await readFile(path.join(dataDirectory(), "applied-github-builds", `${id}.json`), "utf8")) as AppliedBuild;
 }

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["changed", "summary", "memory"],
+  "properties": {
+    "changed": { "type": "boolean" },
+    "summary": { "type": "string", "minLength": 1 },
+    "memory": { "type": "string", "minLength": 1, "maxLength": 120000 }
+  }
+}

@@ -73,6 +73,7 @@ export function StudioChat({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [buildProgress, setBuildProgress] = useState<string[]>([]);
   const [pendingBuildId, setPendingBuildId] = useState("");
+  const [reviewedBuildId, setReviewedBuildId] = useState("");
   const [isApplyingBuild, setIsApplyingBuild] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -531,11 +532,25 @@ export function StudioChat({
     setIsApplyingBuild(true); setError("");
     try {
       const response = await fetch("/api/github/build/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ buildId: pendingBuildId }) });
-      const body = (await response.json()) as { message?: string; error?: string };
+      const body = (await response.json()) as { message?: string; error?: string; readyToPush?: boolean; buildId?: string };
       if (!response.ok) throw new Error(body.error || "The approved build could not be applied.");
       setMessages((current) => current.map((message, index) => index === current.length - 1 && message.role === "assistant" ? { ...message, content: `${message.content}\n\n✅ ${body.message}` } : message));
       setPendingBuildId("");
+      if (body.readyToPush && body.buildId) setReviewedBuildId(body.buildId);
     } catch (failure) { setError(failure instanceof Error ? failure.message : "The approved build could not be applied."); }
+    finally { setIsApplyingBuild(false); }
+  }
+
+  async function pushReviewedBuild() {
+    if (!reviewedBuildId || isApplyingBuild) return;
+    setIsApplyingBuild(true); setError("");
+    try {
+      const response = await fetch("/api/github/build/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ buildId: reviewedBuildId }) });
+      const body = (await response.json()) as { message?: string; error?: string; url?: string };
+      if (!response.ok) throw new Error(body.error || "The reviewed branch could not be pushed.");
+      setMessages((current) => current.map((message, index) => index === current.length - 1 && message.role === "assistant" ? { ...message, content: `${message.content}\n\n✅ ${body.message}${body.url ? `\n\n[Open draft pull request](${body.url})` : ""}` } : message));
+      setReviewedBuildId("");
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "The reviewed branch could not be pushed."); }
     finally { setIsApplyingBuild(false); }
   }
 
@@ -769,7 +784,7 @@ export function StudioChat({
                         </MarkdownResponse>
                       </div>
                       {index === messages.length - 1 && !isRunning && (
-                        <>{pendingBuildId ? <button type="button" onClick={applyPendingBuild} disabled={isApplyingBuild} className="mt-5 rounded-xl border border-sky-300/30 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-100 hover:bg-sky-400/25 disabled:opacity-50">{isApplyingBuild ? "Applying & pushing…" : "Apply & push"}</button> : <ResponseActions content={message.content} currentModel={model} onRegenerate={regenerateLastResponse} />}</>
+                        <>{pendingBuildId ? <button type="button" onClick={applyPendingBuild} disabled={isApplyingBuild} className="mt-5 rounded-xl border border-sky-300/30 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-100 hover:bg-sky-400/25 disabled:opacity-50">{isApplyingBuild ? "Applying & verifying…" : "Apply locally & verify"}</button> : reviewedBuildId ? <button type="button" onClick={pushReviewedBuild} disabled={isApplyingBuild} className="mt-5 rounded-xl border border-sky-300/30 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-100 hover:bg-sky-400/25 disabled:opacity-50">{isApplyingBuild ? "Opening draft PR…" : "Push branch & open draft PR"}</button> : <ResponseActions content={message.content} currentModel={model} onRegenerate={regenerateLastResponse} />}</>
                       )}
                     </>
                   ) : (
