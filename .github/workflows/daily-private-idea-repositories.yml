@@ -58,6 +58,14 @@ jobs:
           IDEAS_OUTPUT_FILE: /tmp/daily-ideas.json
         run: node scripts/generate-daily-private-ideas.mjs
 
+      - name: Preserve the validated architecture portfolio
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-private-idea-specifications-${{ github.run_id }}
+          path: /tmp/daily-ideas.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Create exactly five private repositories
         env:
           GH_TOKEN: ${{ secrets.REPO_CREATOR_TOKEN }}
