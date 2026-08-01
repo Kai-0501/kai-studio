@@ -5,54 +5,53 @@
   "required": ["ideas"],
   "properties": {
     "ideas": {
-      "type": "array",
-      "minItems": 5,
-      "maxItems": 5,
+      "type": "array", "minItems": 5, "maxItems": 5,
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "category", "title", "summary", "problem", "targetUser",
-          "userJourneys", "architecture", "orchestration", "implementationPhases",
-          "deliverables", "acceptanceCriteria", "tests", "securityAndPrivacy",
-          "risks", "nonGoals"
-        ],
+        "type": "object", "additionalProperties": false,
+        "required": ["category", "title", "summary", "problem", "targetUser", "distinctiveness", "qualityGate", "mvp", "smallestExperiment", "userJourneys", "architecture", "repositoryPlan", "dataModel", "contracts", "stateMachines", "aiRuntime", "orchestration", "implementationPhases", "deliverables", "acceptanceCriteria", "tests", "securityAndPrivacy", "failureRecovery", "risks", "assumptions", "nonGoals"],
         "properties": {
           "category": { "type": "string", "enum": ["kai-studio", "other-app"] },
           "title": { "type": "string", "minLength": 8, "maxLength": 90 },
-          "summary": { "type": "string", "minLength": 40, "maxLength": 500 },
-          "problem": { "type": "string", "minLength": 80 },
-          "targetUser": { "type": "string", "minLength": 30 },
-          "userJourneys": { "$ref": "#/$defs/stringList" },
-          "architecture": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["frontend", "backend", "dataModel", "integrations"],
-            "properties": {
-              "frontend": { "type": "string", "minLength": 50 },
-              "backend": { "type": "string", "minLength": 50 },
-              "dataModel": { "type": "string", "minLength": 50 },
-              "integrations": { "type": "string", "minLength": 30 }
-            }
-          },
-          "orchestration": { "$ref": "#/$defs/stringList" },
-          "implementationPhases": { "$ref": "#/$defs/stringList" },
+          "summary": { "type": "string", "minLength": 80, "maxLength": 600 },
+          "problem": { "type": "string", "minLength": 120 },
+          "targetUser": { "type": "string", "minLength": 50 },
+          "distinctiveness": { "type": "object", "additionalProperties": false, "required": ["existingAlternatives", "materialDifference", "repositoryOverlapCheck"], "properties": { "existingAlternatives": { "$ref": "#/$defs/stringList" }, "materialDifference": { "type": "string", "minLength": 100 }, "repositoryOverlapCheck": { "type": "string", "minLength": 80 } } },
+          "qualityGate": { "type": "object", "additionalProperties": false, "required": ["productValue", "distinctiveness", "repeatUsage", "feasibility", "portfolioValue"], "properties": { "productValue": { "$ref": "#/$defs/score" }, "distinctiveness": { "$ref": "#/$defs/score" }, "repeatUsage": { "$ref": "#/$defs/score" }, "feasibility": { "$ref": "#/$defs/score" }, "portfolioValue": { "$ref": "#/$defs/score" } } },
+          "mvp": { "type": "object", "additionalProperties": false, "required": ["scope", "referenceScenario", "successDefinition"], "properties": { "scope": { "type": "string", "minLength": 120 }, "referenceScenario": { "type": "string", "minLength": 100 }, "successDefinition": { "type": "string", "minLength": 80 } } },
+          "smallestExperiment": { "$ref": "#/$defs/experiment" },
+          "userJourneys": { "type": "array", "minItems": 2, "maxItems": 6, "items": { "$ref": "#/$defs/journey" } },
+          "architecture": { "type": "object", "additionalProperties": false, "required": ["processOwnership", "frontend", "backend", "persistence", "backgroundWork", "integrations", "deployment"], "properties": { "processOwnership": { "$ref": "#/$defs/stringList" }, "frontend": { "type": "string", "minLength": 100 }, "backend": { "type": "string", "minLength": 100 }, "persistence": { "type": "string", "minLength": 100 }, "backgroundWork": { "type": "string", "minLength": 80 }, "integrations": { "type": "string", "minLength": 80 }, "deployment": { "type": "string", "minLength": 80 } } },
+          "repositoryPlan": { "type": "object", "additionalProperties": false, "required": ["tree", "principalFiles"], "properties": { "tree": { "$ref": "#/$defs/stringList" }, "principalFiles": { "type": "array", "minItems": 4, "maxItems": 20, "items": { "$ref": "#/$defs/file" } } } },
+          "dataModel": { "type": "array", "minItems": 2, "maxItems": 12, "items": { "$ref": "#/$defs/entity" } },
+          "contracts": { "type": "array", "minItems": 2, "maxItems": 16, "items": { "$ref": "#/$defs/contract" } },
+          "stateMachines": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/stateMachine" } },
+          "aiRuntime": { "type": "object", "additionalProperties": false, "required": ["required", "runtime", "model", "promptContract", "outputContract", "hardwareBudget", "latencyBudget", "fallback", "grounding"], "properties": { "required": { "type": "boolean" }, "runtime": { "type": "string", "minLength": 10 }, "model": { "type": "string", "minLength": 5 }, "promptContract": { "type": "string", "minLength": 80 }, "outputContract": { "type": "string", "minLength": 80 }, "hardwareBudget": { "type": "string", "minLength": 30 }, "latencyBudget": { "type": "string", "minLength": 30 }, "fallback": { "type": "string", "minLength": 50 }, "grounding": { "type": "string", "minLength": 80 } } },
+          "orchestration": { "type": "array", "minItems": 4, "maxItems": 16, "items": { "$ref": "#/$defs/step" } },
+          "implementationPhases": { "type": "array", "minItems": 3, "maxItems": 8, "items": { "$ref": "#/$defs/phase" } },
           "deliverables": { "$ref": "#/$defs/stringList" },
-          "acceptanceCriteria": { "$ref": "#/$defs/stringList" },
-          "tests": { "$ref": "#/$defs/stringList" },
+          "acceptanceCriteria": { "type": "array", "minItems": 6, "maxItems": 18, "items": { "$ref": "#/$defs/criterion" } },
+          "tests": { "type": "array", "minItems": 6, "maxItems": 20, "items": { "$ref": "#/$defs/test" } },
           "securityAndPrivacy": { "$ref": "#/$defs/stringList" },
+          "failureRecovery": { "$ref": "#/$defs/stringList" },
           "risks": { "$ref": "#/$defs/stringList" },
+          "assumptions": { "$ref": "#/$defs/stringList" },
           "nonGoals": { "$ref": "#/$defs/stringList" }
         }
       }
     }
   },
   "$defs": {
-    "stringList": {
-      "type": "array",
-      "minItems": 3,
-      "maxItems": 12,
-      "items": { "type": "string", "minLength": 20 }
-    }
+    "stringList": { "type": "array", "minItems": 3, "maxItems": 16, "items": { "type": "string", "minLength": 30 } },
+    "score": { "type": "object", "additionalProperties": false, "required": ["score", "rationale"], "properties": { "score": { "type": "integer", "minimum": 1, "maximum": 10 }, "rationale": { "type": "string", "minLength": 40 } } },
+    "experiment": { "type": "object", "additionalProperties": false, "required": ["hypothesis", "method", "successThreshold", "failureThreshold", "timebox"], "properties": { "hypothesis": { "type": "string", "minLength": 50 }, "method": { "type": "string", "minLength": 80 }, "successThreshold": { "type": "string", "minLength": 30 }, "failureThreshold": { "type": "string", "minLength": 30 }, "timebox": { "type": "string", "minLength": 10 } } },
+    "journey": { "type": "object", "additionalProperties": false, "required": ["name", "preconditions", "steps", "outcome", "failurePath"], "properties": { "name": { "type": "string", "minLength": 10 }, "preconditions": { "$ref": "#/$defs/stringList" }, "steps": { "$ref": "#/$defs/stringList" }, "outcome": { "type": "string", "minLength": 50 }, "failurePath": { "type": "string", "minLength": 50 } } },
+    "file": { "type": "object", "additionalProperties": false, "required": ["path", "responsibility"], "properties": { "path": { "type": "string", "minLength": 3 }, "responsibility": { "type": "string", "minLength": 40 } } },
+    "entity": { "type": "object", "additionalProperties": false, "required": ["name", "purpose", "fields", "relationships", "constraints", "versioning"], "properties": { "name": { "type": "string", "minLength": 3 }, "purpose": { "type": "string", "minLength": 40 }, "fields": { "$ref": "#/$defs/stringList" }, "relationships": { "$ref": "#/$defs/stringList" }, "constraints": { "$ref": "#/$defs/stringList" }, "versioning": { "type": "string", "minLength": 40 } } },
+    "contract": { "type": "object", "additionalProperties": false, "required": ["name", "transport", "input", "output", "validation", "errors", "timeoutRetry", "idempotency"], "properties": { "name": { "type": "string", "minLength": 5 }, "transport": { "type": "string", "minLength": 10 }, "input": { "type": "string", "minLength": 50 }, "output": { "type": "string", "minLength": 50 }, "validation": { "type": "string", "minLength": 50 }, "errors": { "type": "string", "minLength": 50 }, "timeoutRetry": { "type": "string", "minLength": 40 }, "idempotency": { "type": "string", "minLength": 40 } } },
+    "stateMachine": { "type": "object", "additionalProperties": false, "required": ["name", "states", "transitions", "cancellation", "recovery"], "properties": { "name": { "type": "string", "minLength": 5 }, "states": { "$ref": "#/$defs/stringList" }, "transitions": { "$ref": "#/$defs/stringList" }, "cancellation": { "type": "string", "minLength": 50 }, "recovery": { "type": "string", "minLength": 50 } } },
+    "step": { "type": "object", "additionalProperties": false, "required": ["order", "owner", "action", "input", "output", "failureBehavior"], "properties": { "order": { "type": "integer", "minimum": 1 }, "owner": { "type": "string", "minLength": 5 }, "action": { "type": "string", "minLength": 50 }, "input": { "type": "string", "minLength": 30 }, "output": { "type": "string", "minLength": 30 }, "failureBehavior": { "type": "string", "minLength": 40 } } },
+    "phase": { "type": "object", "additionalProperties": false, "required": ["name", "goal", "changes", "workingResult", "verification", "exitCriteria"], "properties": { "name": { "type": "string", "minLength": 5 }, "goal": { "type": "string", "minLength": 50 }, "changes": { "$ref": "#/$defs/stringList" }, "workingResult": { "type": "string", "minLength": 50 }, "verification": { "$ref": "#/$defs/stringList" }, "exitCriteria": { "type": "string", "minLength": 50 } } },
+    "criterion": { "type": "object", "additionalProperties": false, "required": ["id", "given", "when", "then", "metric", "threshold", "verification"], "properties": { "id": { "type": "string", "minLength": 3 }, "given": { "type": "string", "minLength": 30 }, "when": { "type": "string", "minLength": 30 }, "then": { "type": "string", "minLength": 30 }, "metric": { "type": "string", "minLength": 20 }, "threshold": { "type": "string", "minLength": 10 }, "verification": { "type": "string", "minLength": 30 } } },
+    "test": { "type": "object", "additionalProperties": false, "required": ["level", "name", "fixture", "procedure", "expectedResult"], "properties": { "level": { "type": "string", "enum": ["unit", "integration", "end-to-end", "security", "recovery", "performance"] }, "name": { "type": "string", "minLength": 10 }, "fixture": { "type": "string", "minLength": 30 }, "procedure": { "type": "string", "minLength": 50 }, "expectedResult": { "type": "string", "minLength": 30 } } }
   }
 }

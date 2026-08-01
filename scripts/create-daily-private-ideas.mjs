@@ -28,9 +28,28 @@ function singaporeDate() {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+function label(key) {
+  return key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (character) => character.toUpperCase());
+}
+
+function renderValue(value, depth = 0) {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    return value.map((item, index) => {
+      if (typeof item === "string") return `${index + 1}. ${item}`;
+      const heading = item.name || item.title || item.id || `Item ${index + 1}`;
+      const rest = Object.entries(item).filter(([key]) => !["name", "title", "id"].includes(key));
+      return `${"#".repeat(Math.min(6, depth + 3))} ${heading}\n\n${rest.map(([key, child]) => `**${label(key)}:** ${renderValue(child, depth + 1)}`).join("\n\n")}`;
+    }).join("\n\n");
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).map(([key, child]) => `**${label(key)}:** ${renderValue(child, depth + 1)}`).join("\n\n");
+  }
+  return "Not specified";
+}
+
 function section(title, value) {
-  const body = Array.isArray(value) ? value.map((item, index) => `${index + 1}. ${item}`).join("\n") : value;
-  return `## ${title}\n\n${body}`;
+  return `## ${title}\n\n${renderValue(value)}`;
 }
 
 function readme(idea, date) {
@@ -43,18 +62,26 @@ function readme(idea, date) {
     "",
     section("Problem", idea.problem),
     section("Target user", idea.targetUser),
+    section("Distinctiveness", idea.distinctiveness),
+    section("Quality gate", idea.qualityGate),
+    section("MVP", idea.mvp),
+    section("Smallest experiment", idea.smallestExperiment),
     section("User journeys", idea.userJourneys),
-    section("Architecture — frontend", idea.architecture.frontend),
-    section("Architecture — backend", idea.architecture.backend),
-    section("Architecture — data model", idea.architecture.dataModel),
-    section("Architecture — integrations", idea.architecture.integrations),
+    section("Architecture", idea.architecture),
+    section("Repository plan", idea.repositoryPlan),
+    section("Data model", idea.dataModel),
+    section("API, IPC, event, and file contracts", idea.contracts),
+    section("State machines", idea.stateMachines),
+    section("AI runtime contract", idea.aiRuntime),
     section("Agent orchestration", idea.orchestration),
     section("Implementation phases", idea.implementationPhases),
     section("Detailed deliverables", idea.deliverables),
     section("Acceptance criteria", idea.acceptanceCriteria),
     section("Tests and verification", idea.tests),
     section("Security and privacy", idea.securityAndPrivacy),
+    section("Failure and recovery", idea.failureRecovery),
     section("Risks and edge cases", idea.risks),
+    section("Explicit assumptions", idea.assumptions),
     section("Non-goals", idea.nonGoals),
     "",
     "## Build handoff",

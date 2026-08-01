@@ -1,10 +1,11 @@
 # Kai Studio cloud ideation context
 
-Kai Studio is a private, local-first macOS AI workspace. Its current application stack is Next.js, TypeScript, Tailwind CSS, Electron, local filesystem persistence, Ollama, and local Gemma 4 models.
+Kai Studio is a private, local-first macOS AI workspace. Its current application stack is Next.js, TypeScript, Tailwind CSS, Electron, local filesystem persistence, Ollama, a Kai Studio-managed llama.cpp runtime for Hugging Face GGUF models, and local Gemma 4 models.
 
 ## Current capabilities
 
 - General chat with 12B, 26B, and 31B local Gemma models.
+- Hugging Face GGUF model discovery with a background runtime launched and stopped by Kai Studio; the user never manages Terminal servers.
 - Tiered personal memory and temporary chats.
 - Markdown rendering, chat history, automatic titles, regeneration, model switching, performance reporting, and local image generation.
 - Local speech transcription before review and send.
