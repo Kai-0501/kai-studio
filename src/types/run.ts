@@ -4,6 +4,22 @@ export type FollowUpMessage = {
   createdAt: string;
 };
 
+export type DiagnosticPriority =
+  | "critical"
+  | "high"
+  | "medium"
+  | "low"
+  | "user-request";
+
+export type DiagnosticRecommendation = {
+  id: string;
+  priority: DiagnosticPriority;
+  title: string;
+  summary: string;
+  evidence: string;
+  acceptanceCriteria: string[];
+};
+
 export type SavedRun = {
   id: string;
   title?: string;
@@ -17,5 +33,8 @@ export type SavedRun = {
   model: string;
   output: string;
   followUps?: FollowUpMessage[];
+  diagnosticsRecommendations?: DiagnosticRecommendation[];
+  diagnosticsPlan?: string;
+  diagnosticSelectedRecommendationIds?: string[];
   createdAt: string;
 };

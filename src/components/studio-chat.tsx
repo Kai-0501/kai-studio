@@ -54,11 +54,13 @@ export function StudioChat({
   repositoryHandoff,
   autoStart = false,
   activeBuildJobId,
+  diagnosticRunId,
 }: {
   initialPrompt?: string;
   repositoryHandoff?: { owner: string; repo: string; fullName: string };
   autoStart?: boolean;
   activeBuildJobId?: string;
+  diagnosticRunId?: string;
 } = {}) {
   const [model, setModel] = useState("gemma4:26b-mlx");
   const [modelOptions, setModelOptions] = useState(fallbackModelOptions);
@@ -423,7 +425,7 @@ export function StudioChat({
       if (repositoryHandoff && composerMode === "chat") {
         setBuildProgress([]);
         setPendingBuildId("");
-        const response = await fetch("/api/github/build/active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner: repositoryHandoff.owner, repo: repositoryHandoff.repo, task: userContent }) });
+        const response = await fetch("/api/github/build/active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner: repositoryHandoff.owner, repo: repositoryHandoff.repo, task: userContent, ...(diagnosticRunId ? { diagnosticRunId } : {}) }) });
         const body = (await response.json()) as { id?: string; error?: string };
         if (!response.ok || !body.id) throw new Error(body.error || "The repository build could not start.");
         await followActiveBuild(body.id, false, conversationBeforeAnswer, assistantId);

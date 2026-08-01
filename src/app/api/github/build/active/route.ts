@@ -41,7 +41,7 @@ async function runJob(job: ActiveBuildJob, origin: string) {
       await fetch(`${origin}/api/github/build`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner: job.owner, repo: job.repo, task: job.task }),
+        body: JSON.stringify({ owner: job.owner, repo: job.repo, task: job.task, diagnosticRunId: job.diagnosticRunId }),
       }),
       (event) => {
         if (event.type === "error") throw new Error(event.error || "Security preflight failed.");
@@ -49,8 +49,8 @@ async function runJob(job: ActiveBuildJob, origin: string) {
         if (event.type === "final" && event.buildId) pendingBuildId = event.buildId;
       },
     );
-    if (!pendingBuildId) throw new Error("Security preflight stopped without an approved build.");
-    addEvent(job, { type: "progress", message: "The security preflight passed. Qwen is starting the bounded implementation now." });
+    if (!pendingBuildId) throw new Error("The build preparation stopped without an approved build.");
+    addEvent(job, { type: "progress", message: job.diagnosticRunId ? "Qwen is starting the selected diagnostics implementation now." : "The security preflight passed. Qwen is starting the bounded implementation now." });
     await consumeEvents(
       await fetch(`${origin}/api/github/build/apply`, {
         method: "POST",
@@ -78,7 +78,7 @@ async function runJob(job: ActiveBuildJob, origin: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json()) as { owner?: unknown; repo?: unknown; task?: unknown };
+  const body = (await request.json()) as { owner?: unknown; repo?: unknown; task?: unknown; diagnosticRunId?: unknown };
   if (typeof body.owner !== "string" || typeof body.repo !== "string" || typeof body.task !== "string" || !body.task.trim()) {
     return Response.json({ error: "Repository and task are required." }, { status: 400 });
   }
@@ -87,8 +87,9 @@ export async function POST(request: NextRequest) {
     owner: body.owner,
     repo: body.repo,
     task: body.task.trim(),
+    ...(typeof body.diagnosticRunId === "string" ? { diagnosticRunId: body.diagnosticRunId } : {}),
     status: "running",
-    events: [{ type: "progress", message: "The secure build session is starting." }],
+    events: [{ type: "progress", message: typeof body.diagnosticRunId === "string" ? "The selected diagnostics plan is being handed directly to Qwen." : "The secure build session is starting." }],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

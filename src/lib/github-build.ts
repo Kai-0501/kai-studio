@@ -7,7 +7,7 @@ const execFileAsync = promisify(execFile);
 const ignored = new Set([".git", "node_modules", ".next", "dist", "build", "coverage", "vendor"]);
 const textExtensions = new Set([".c", ".cpp", ".css", ".go", ".html", ".java", ".js", ".json", ".jsx", ".md", ".mjs", ".py", ".rs", ".sh", ".sql", ".swift", ".toml", ".ts", ".tsx", ".txt", ".yaml", ".yml"]);
 
-export type PendingBuild = { id: string; owner: string; repo: string; defaultBranch: string; task: string; summary: string; securitySummary: string; files: { path: string; content: string }[]; verification: string[]; createdAt: string };
+export type PendingBuild = { id: string; owner: string; repo: string; defaultBranch: string; task: string; summary: string; securitySummary: string; skipSecurity?: boolean; files: { path: string; content: string }[]; verification: string[]; createdAt: string };
 export type AppliedBuild = { buildId: string; owner: string; repo: string; branch: string; summary: string; checks: CheckResult[]; commit: string; createdAt: string };
 export type CheckResult = { name: string; command: string; passed: boolean; output: string; durationMs: number };
 

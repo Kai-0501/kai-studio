@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { FollowUpMessage, SavedRun } from "@/types/run";
+import type { DiagnosticRecommendation, FollowUpMessage, SavedRun } from "@/types/run";
 
 const dataDirectory =
   process.env.KAI_STUDIO_DATA_DIR ?? path.join(process.cwd(), ".promptdeck");
@@ -53,6 +53,9 @@ export async function updateRunConversation(
     followUps?: FollowUpMessage[];
     output?: string;
     model?: string;
+    diagnosticsRecommendations?: DiagnosticRecommendation[];
+    diagnosticsPlan?: string;
+    diagnosticSelectedRecommendationIds?: string[];
   },
 ) {
   await mkdir(dataDirectory, { recursive: true });

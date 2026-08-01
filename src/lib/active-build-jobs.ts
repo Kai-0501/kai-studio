@@ -12,6 +12,7 @@ export type ActiveBuildJob = {
   owner: string;
   repo: string;
   task: string;
+  diagnosticRunId?: string;
   status: "running" | "complete" | "failed";
   events: ActiveBuildEvent[];
   createdAt: string;

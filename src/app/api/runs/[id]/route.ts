@@ -1,5 +1,5 @@
 import { deleteRun, findRun, updateRunConversation } from "@/lib/run-store";
-import type { FollowUpMessage } from "@/types/run";
+import type { DiagnosticRecommendation, FollowUpMessage } from "@/types/run";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +27,9 @@ export async function PATCH(
     followUps?: unknown;
     output?: unknown;
     model?: unknown;
+    diagnosticsRecommendations?: unknown;
+    diagnosticsPlan?: unknown;
+    diagnosticSelectedRecommendationIds?: unknown;
   };
 
   if (
@@ -38,6 +41,28 @@ export async function PATCH(
       { status: 400 },
     );
   }
+
+  const recommendationsValid =
+    body.diagnosticsRecommendations === undefined ||
+    (Array.isArray(body.diagnosticsRecommendations) &&
+      body.diagnosticsRecommendations.length <= 40 &&
+      body.diagnosticsRecommendations.every(
+        (item) =>
+          typeof item === "object" &&
+          item !== null &&
+          "id" in item &&
+          typeof item.id === "string" &&
+          "priority" in item &&
+          ["critical", "high", "medium", "low", "user-request"].includes(String(item.priority)) &&
+          "title" in item &&
+          typeof item.title === "string" &&
+          "summary" in item &&
+          typeof item.summary === "string" &&
+          "evidence" in item &&
+          typeof item.evidence === "string" &&
+          "acceptanceCriteria" in item &&
+          Array.isArray(item.acceptanceCriteria),
+      ));
 
   const valid =
     body.followUps === undefined ||
@@ -55,10 +80,17 @@ export async function PATCH(
 
   if (
     !valid ||
+    !recommendationsValid ||
     (body.output !== undefined &&
       (typeof body.output !== "string" || !body.output.trim())) ||
     (body.model !== undefined &&
       (typeof body.model !== "string" || !body.model.trim()))
+    || (body.diagnosticsPlan !== undefined &&
+      (typeof body.diagnosticsPlan !== "string" || !body.diagnosticsPlan.trim()))
+    || (body.diagnosticSelectedRecommendationIds !== undefined &&
+      (!Array.isArray(body.diagnosticSelectedRecommendationIds) ||
+        body.diagnosticSelectedRecommendationIds.length > 40 ||
+        !body.diagnosticSelectedRecommendationIds.every((id) => typeof id === "string" && id.trim())))
   ) {
     return Response.json(
       { error: "Follow-up conversation contains invalid messages." },
@@ -70,6 +102,9 @@ export async function PATCH(
     body.followUps === undefined &&
     body.output === undefined &&
     body.model === undefined
+    && body.diagnosticsRecommendations === undefined
+    && body.diagnosticsPlan === undefined
+    && body.diagnosticSelectedRecommendationIds === undefined
   ) {
     return Response.json({ error: "No conversation changes supplied." }, { status: 400 });
   }
@@ -80,6 +115,13 @@ export async function PATCH(
       : {}),
     ...(typeof body.output === "string" ? { output: body.output } : {}),
     ...(typeof body.model === "string" ? { model: body.model } : {}),
+    ...(Array.isArray(body.diagnosticsRecommendations)
+      ? { diagnosticsRecommendations: body.diagnosticsRecommendations as DiagnosticRecommendation[] }
+      : {}),
+    ...(typeof body.diagnosticsPlan === "string" ? { diagnosticsPlan: body.diagnosticsPlan } : {}),
+    ...(Array.isArray(body.diagnosticSelectedRecommendationIds)
+      ? { diagnosticSelectedRecommendationIds: body.diagnosticSelectedRecommendationIds as string[] }
+      : {}),
   });
 
   if (!updated) {
