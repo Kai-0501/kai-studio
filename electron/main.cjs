@@ -155,6 +155,7 @@ app.whenReady().then(async () => {
 
   try {
     await waitForServer();
+    await syncGitHubRepositories();
     scheduleDailyGitHubSync();
     createWindow();
   } catch (error) {
