@@ -54,6 +54,7 @@ export async function generateChatTitle(
   model: string,
 ) {
   const fallback = fallbackTitle(message);
+  if (model.startsWith("hf:")) return fallback;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 6_000);
 

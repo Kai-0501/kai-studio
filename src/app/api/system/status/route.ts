@@ -1,4 +1,5 @@
 import type { SystemStatus } from "@/types/settings";
+import { listHuggingFaceModels } from "@/lib/local-model-runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,12 @@ type OllamaTagsResponse = {
 
 export async function GET() {
   const checkedAt = new Date().toISOString();
+  const huggingFaceModels = (await listHuggingFaceModels()).map((model) => ({
+    name: model.id,
+    size: model.size,
+    modifiedAt: checkedAt,
+    provider: "huggingface" as const,
+  }));
 
   try {
     const response = await fetch("http://127.0.0.1:11434/api/tags", {
@@ -30,11 +37,13 @@ export async function GET() {
         name: model.name,
         size: model.size,
         modifiedAt: model.modified_at,
+        provider: "ollama" as const,
       }));
 
     const status: SystemStatus = {
       ollamaOnline: true,
       models,
+      huggingFaceModels,
       checkedAt,
     };
 
@@ -43,6 +52,7 @@ export async function GET() {
     const status: SystemStatus = {
       ollamaOnline: false,
       models: [],
+      huggingFaceModels,
       checkedAt,
       error:
         error instanceof Error

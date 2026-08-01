@@ -180,8 +180,7 @@ export default function SettingsPage() {
             Local AI system
           </h1>
           <p className="mt-3 text-slate-400">
-            Review Ollama connectivity and choose Kai Studio&apos;s default Gemma
-            model.
+            Review local AI connectivity and choose Kai Studio&apos;s default model.
           </p>
 
           <section className="mt-10 rounded-2xl border border-white/10 bg-white/[0.025] p-6">
@@ -192,21 +191,21 @@ export default function SettingsPage() {
                     className={`h-2.5 w-2.5 rounded-full ${
                       checking
                         ? "animate-pulse bg-amber-400"
-                        : status?.ollamaOnline
+                        : status?.ollamaOnline || status?.huggingFaceModels?.length
                           ? "bg-emerald-400"
                           : "bg-red-400"
                     }`}
                   />
                   <h2 className="font-semibold">
                     {checking
-                      ? "Checking Ollama…"
-                      : status?.ollamaOnline
-                        ? "Ollama is online"
-                        : "Ollama is offline"}
+                      ? "Checking local models…"
+                      : status?.ollamaOnline || status?.huggingFaceModels?.length
+                        ? "Local models are ready"
+                        : "Local models are unavailable"}
                   </h2>
                 </div>
                 <p className="mt-2 text-sm text-slate-500">
-                  Local endpoint: http://127.0.0.1:11434
+                  Kai Studio manages compatible runtimes automatically.
                 </p>
               </div>
               <button
@@ -219,10 +218,9 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            {!checking && !status?.ollamaOnline && (
+            {!checking && !status?.ollamaOnline && !status?.huggingFaceModels?.length && (
               <p className="mt-5 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-300">
-                Kai Studio cannot reach Ollama. Open the Ollama app, then check
-                the connection again.
+                Kai Studio could not find an available local model runtime.
               </p>
             )}
           </section>
@@ -235,7 +233,7 @@ export default function SettingsPage() {
               <div>
                 <h2 className="font-semibold">Chat performance</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Exact Ollama generation speed for saved normal chats.
+                  Exact local generation speed for saved normal chats.
                 </p>
               </div>
               <p className="text-xs text-slate-500">
@@ -288,14 +286,14 @@ export default function SettingsPage() {
 
           <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.025] p-6">
             <div>
-              <h2 className="font-semibold">Installed Gemma models</h2>
+              <h2 className="font-semibold">Installed local models</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Models detected directly from your local Ollama library.
+                Models detected from Ollama and your managed Hugging Face library.
               </p>
             </div>
 
             <div className="mt-6 grid gap-3">
-              {(status?.models ?? []).map((model) => (
+              {[...(status?.models ?? []), ...(status?.huggingFaceModels ?? [])].map((model) => (
                 <label
                   key={model.name}
                   className={`flex cursor-pointer items-center justify-between gap-4 rounded-xl border p-4 transition ${
@@ -318,7 +316,9 @@ export default function SettingsPage() {
                     />
                     <div>
                       <p className="text-sm font-medium">{displayName(model.name)}</p>
-                      <p className="mt-1 text-xs text-slate-500">{model.name}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {model.provider === "huggingface" ? "Hugging Face · managed by Kai Studio" : "Ollama"}
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -330,10 +330,9 @@ export default function SettingsPage() {
                 </label>
               ))}
 
-              {!checking && status?.ollamaOnline && status.models.length === 0 && (
+              {!checking && status?.models.length === 0 && status?.huggingFaceModels?.length === 0 && (
                 <p className="rounded-xl border border-dashed border-white/10 p-6 text-sm text-slate-500">
-                  Ollama is online, but no Kai Studio-compatible Gemma models were
-                  found.
+                  No Kai Studio-compatible local models were found.
                 </p>
               )}
             </div>
@@ -343,7 +342,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={saveDefault}
-                disabled={saving || !status?.models.length}
+                disabled={saving || !((status?.models.length ?? 0) + (status?.huggingFaceModels?.length ?? 0))}
                 className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-3 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {saving ? "Saving…" : "Save default"}
@@ -492,8 +491,8 @@ export default function SettingsPage() {
               Privacy guarantee
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Kai Studio connects only to Ollama on this Mac. Weekly memory,
-              workflow inputs, saved runs, and model outputs remain local.
+              Kai Studio runs Ollama and Hugging Face models locally on this Mac.
+              Weekly memory, workflow inputs, saved runs, and model outputs remain local.
             </p>
           </section>
         </div>
@@ -503,6 +502,7 @@ export default function SettingsPage() {
 }
 
 function displayName(model: string) {
+  if (model.startsWith("hf:")) return "Gemma 4 26B A4B · Hugging Face";
   if (model.includes("12b")) return "Gemma 4 12B · Fast";
   if (model.includes("26b")) return "Gemma 4 26B · Balanced";
   if (model.includes("31b")) return "Gemma 4 31B · Best quality";

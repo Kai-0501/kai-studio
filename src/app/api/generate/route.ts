@@ -19,6 +19,11 @@ import {
 } from "@/lib/memory/session";
 import type { RetrievedMemory } from "@/types/memory";
 import { recordPerformance } from "@/lib/performance-store";
+import {
+  ensureHuggingFaceModel,
+  huggingFaceModelId,
+  isHuggingFaceModel,
+} from "@/lib/local-model-runtime";
 
 export const runtime = "nodejs";
 
@@ -26,6 +31,7 @@ const allowedModels = new Set([
   "gemma4:12b-mlx",
   "gemma4:26b-mlx",
   "gemma4:31b-mlx",
+  huggingFaceModelId,
 ]);
 
 const visionExtractionModel = "glm-ocr";
@@ -196,7 +202,8 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Select a supported Gemma model." }, { status: 400 });
   }
 
-  let ollamaResponse: Response;
+  let modelResponse: Response;
+  const huggingFace = isHuggingFaceModel(body.model as string);
 
   try {
     const conversationMessages = await Promise.all(
@@ -264,38 +271,54 @@ export async function POST(request: NextRequest) {
       ...conversationMessages,
     ];
 
-    ollamaResponse = await fetch(ollamaChatUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: body.model,
-        messages,
-        stream: true,
-        think: false,
-        options: {
+    if (huggingFace) {
+      await ensureHuggingFaceModel(body.model);
+      modelResponse = await fetch("http://127.0.0.1:11435/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: body.model,
+          messages,
+          stream: true,
           temperature: 0.2,
-          num_predict: 4096,
-        },
-      }),
-      signal: request.signal,
-    });
+          max_tokens: 4096,
+        }),
+        signal: request.signal,
+      });
+    } else {
+      modelResponse = await fetch(ollamaChatUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: body.model,
+          messages,
+          stream: true,
+          think: false,
+          options: {
+            temperature: 0.2,
+            num_predict: 4096,
+          },
+        }),
+        signal: request.signal,
+      });
+    }
   } catch (failure) {
     return Response.json(
       {
         error:
           failure instanceof Error && failure.message
             ? failure.message
-            : "Kai Studio could not reach Ollama. Make sure the Ollama app is running.",
+            : "Kai Studio could not start the selected local model.",
       },
       { status: 503 },
     );
   }
 
-  if (!ollamaResponse.ok || !ollamaResponse.body) {
-    const details = await ollamaResponse.text();
+  if (!modelResponse.ok || !modelResponse.body) {
+    const details = await modelResponse.text();
     return Response.json(
-      { error: details || "Ollama could not start this generation." },
-      { status: ollamaResponse.status || 502 },
+      { error: details || "The local model could not start this generation." },
+      { status: modelResponse.status || 502 },
     );
   }
 
@@ -305,7 +328,7 @@ export async function POST(request: NextRequest) {
 
   const outputStream = new ReadableStream({
     async start(controller) {
-      const reader = ollamaResponse.body!.getReader();
+      const reader = modelResponse.body!.getReader();
 
       try {
         while (true) {
@@ -318,6 +341,18 @@ export async function POST(request: NextRequest) {
 
           for (const line of lines) {
             if (!line.trim()) continue;
+
+            if (huggingFace) {
+              if (!line.startsWith("data:")) continue;
+              const data = line.slice(5).trim();
+              if (!data || data === "[DONE]") continue;
+              const chunk = JSON.parse(data) as {
+                choices?: Array<{ delta?: { content?: string } }>;
+              };
+              const content = chunk.choices?.[0]?.delta?.content;
+              if (content) controller.enqueue(encoder.encode(content));
+              continue;
+            }
 
             const chunk = JSON.parse(line) as {
               message?: { content?: string };
@@ -363,7 +398,7 @@ export async function POST(request: NextRequest) {
       }
     },
     cancel() {
-      ollamaResponse.body?.cancel();
+      modelResponse.body?.cancel();
     },
   });
 

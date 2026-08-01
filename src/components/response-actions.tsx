@@ -6,6 +6,7 @@ const modelOptions = [
   { value: "gemma4:12b-mlx", label: "Gemma 4 12B" },
   { value: "gemma4:26b-mlx", label: "Gemma 4 26B" },
   { value: "gemma4:31b-mlx", label: "Gemma 4 31B" },
+  { value: "hf:gemma4-26b-a4b-q4", label: "Gemma 4 26B A4B · Hugging Face" },
 ];
 
 export function ResponseActions({

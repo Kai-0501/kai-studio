@@ -29,6 +29,7 @@ const initialForm: AccountForm = {
 const modelOptions = [
   { value: "gemma4:26b-mlx", label: "Gemma 4 26B · Balanced" },
   { value: "gemma4:31b-mlx", label: "Gemma 4 31B · Best quality" },
+  { value: "hf:gemma4-26b-a4b-q4", label: "Gemma 4 26B A4B · Hugging Face" },
 ];
 
 function buildAccountPrompt(values: AccountForm) {

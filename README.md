@@ -41,7 +41,7 @@ Electron desktop shell
         ▼
 Next.js application + local API routes
         │
-        ├── Ollama → Gemma chat and reasoning models
+        ├── Ollama + managed llama.cpp → local chat and reasoning models
         ├── Ollama → Z-Image Turbo
         ├── FluidAudio → Parakeet speech-to-text
         ├── GitHub CLI → owned repository metadata and README cache
@@ -62,7 +62,7 @@ For the memory design, see
 - TypeScript
 - Tailwind CSS
 - Electron
-- Ollama
+- Ollama or Kai Studio's managed llama.cpp runtime
 - Node.js SQLite
 - FluidAudio / Parakeet
 
@@ -72,7 +72,7 @@ Requirements:
 
 - macOS on Apple Silicon
 - Node.js and npm
-- Ollama
+- Ollama and llama.cpp (managed automatically by the desktop app)
 - Compatible local models matching the model identifiers configured in the
   application
 

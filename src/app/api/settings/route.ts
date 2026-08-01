@@ -7,6 +7,7 @@ const supportedModels = new Set([
   "gemma4:12b-mlx",
   "gemma4:26b-mlx",
   "gemma4:31b-mlx",
+  "hf:gemma4-26b-a4b-q4",
 ]);
 
 export async function GET() {

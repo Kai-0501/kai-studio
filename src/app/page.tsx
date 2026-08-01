@@ -176,7 +176,7 @@ export default function DashboardPage() {
                   Privacy status
                 </div>
                 <p className="mt-3 text-sm leading-6 text-slate-400">
-                  Ollama processes every prompt locally. GitHub metadata and
+                  Kai Studio processes every prompt locally. GitHub metadata and
                   README files sync only from repositories you own.
                 </p>
                 <p className="mt-4 text-xs text-slate-600">

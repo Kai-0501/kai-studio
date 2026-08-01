@@ -46,6 +46,7 @@ const modelOptions = [
   { value: "gemma4:12b-mlx", label: "Gemma 4 12B", detail: "Quick" },
   { value: "gemma4:26b-mlx", label: "Gemma 4 26B", detail: "Balanced" },
   { value: "gemma4:31b-mlx", label: "Gemma 4 31B", detail: "Deep" },
+  { value: "hf:gemma4-26b-a4b-q4", label: "Gemma 4 26B A4B", detail: "Hugging Face" },
 ];
 
 export function StudioChat({
