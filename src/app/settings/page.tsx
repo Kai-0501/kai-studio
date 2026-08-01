@@ -406,9 +406,9 @@ export default function SettingsPage() {
                   <h2 className="font-semibold">Kai Memory</h2>
                 </div>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                  Replace this once a week with your latest ChatGPT memory
-                  export. Normal Chat uses it quietly as personal background
-                  context.
+                  Synced from Kai&apos;s private GitHub memory vault whenever Kai
+                  Studio opens. GitHub reviews new inbox entries every Sunday
+                  at 8:00am Singapore time; this editor remains as a manual fallback.
                 </p>
               </div>
               <div className="shrink-0 text-left text-xs text-slate-500 sm:text-right">
@@ -438,7 +438,7 @@ export default function SettingsPage() {
 
             <label className="mt-5 block">
               <span className="text-sm font-medium text-slate-300">
-                Current weekly memory
+                Current cloud-backed memory
               </span>
               <textarea
                 value={memoryDraft}
@@ -480,7 +480,7 @@ export default function SettingsPage() {
                   disabled={savingMemory || !memoryDraft.trim()}
                   className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-2.5 text-sm font-medium text-sky-200 transition hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {savingMemory ? "Updating…" : "Update weekly memory"}
+                  {savingMemory ? "Updating…" : "Save manual override"}
                 </button>
               </div>
             </div>
@@ -491,8 +491,9 @@ export default function SettingsPage() {
               Privacy guarantee
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Kai Studio runs Ollama and Hugging Face models locally on this Mac.
-              Weekly memory, workflow inputs, saved runs, and model outputs remain local.
+              Chats, workflow inputs, saved runs, and model outputs remain local.
+              KaiLore&apos;s canonical memory is additionally stored in a private
+              GitHub repository and its Sunday review uses the configured Gemini API.
             </p>
           </section>
         </div>

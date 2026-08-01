@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
 import { writeMemory, memoryStatus } from "@/lib/memory-store";
 
@@ -10,6 +12,10 @@ export async function POST() {
     const gh = process.env.KAI_STUDIO_GH_PATH || "/opt/homebrew/bin/gh";
     const { stdout } = await execFileAsync(gh, ["api", "repos/Kai-0501/kai-memory-cloud/contents/memory/current.md", "-H", "Accept: application/vnd.github.raw+json"], { timeout: 30_000, maxBuffer: 256_000 });
     if (!stdout.trim() || stdout.length > 120_000) throw new Error("The cloud memory file is empty or too large.");
+    const dataDirectory = process.env.KAI_STUDIO_DATA_DIR ?? path.join(process.cwd(), ".promptdeck");
+    const cloudLoreDirectory = path.join(dataDirectory, "KaiLore", "cloud");
+    await mkdir(cloudLoreDirectory, { recursive: true });
+    await writeFile(path.join(cloudLoreDirectory, "current.md"), stdout, "utf8");
     return Response.json(memoryStatus(await writeMemory(stdout, "KaiLore cloud memory")));
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Cloud memory could not be synced." }, { status: 503 });
