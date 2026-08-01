@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ideas"],
+  "properties": {
+    "ideas": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "category", "title", "summary", "problem", "targetUser",
+          "userJourneys", "architecture", "orchestration", "implementationPhases",
+          "deliverables", "acceptanceCriteria", "tests", "securityAndPrivacy",
+          "risks", "nonGoals"
+        ],
+        "properties": {
+          "category": { "type": "string", "enum": ["kai-studio", "other-app"] },
+          "title": { "type": "string", "minLength": 8, "maxLength": 90 },
+          "summary": { "type": "string", "minLength": 40, "maxLength": 500 },
+          "problem": { "type": "string", "minLength": 80 },
+          "targetUser": { "type": "string", "minLength": 30 },
+          "userJourneys": { "$ref": "#/$defs/stringList" },
+          "architecture": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["frontend", "backend", "dataModel", "integrations"],
+            "properties": {
+              "frontend": { "type": "string", "minLength": 50 },
+              "backend": { "type": "string", "minLength": 50 },
+              "dataModel": { "type": "string", "minLength": 50 },
+              "integrations": { "type": "string", "minLength": 30 }
+            }
+          },
+          "orchestration": { "$ref": "#/$defs/stringList" },
+          "implementationPhases": { "$ref": "#/$defs/stringList" },
+          "deliverables": { "$ref": "#/$defs/stringList" },
+          "acceptanceCriteria": { "$ref": "#/$defs/stringList" },
+          "tests": { "$ref": "#/$defs/stringList" },
+          "securityAndPrivacy": { "$ref": "#/$defs/stringList" },
+          "risks": { "$ref": "#/$defs/stringList" },
+          "nonGoals": { "$ref": "#/$defs/stringList" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stringList": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 12,
+      "items": { "type": "string", "minLength": 20 }
+    }
+  }
+}

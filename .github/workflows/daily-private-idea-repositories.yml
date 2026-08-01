@@ -1,0 +1,48 @@
+name: Daily private idea repositories
+
+on:
+  schedule:
+    # 22:00 UTC is 06:00 Asia/Singapore the following morning.
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-private-idea-repositories
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    outputs:
+      ideas: ${{ steps.codex.outputs.final-message }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Design exactly five build-ready ideas
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/prompts/daily-private-ideas.md
+          sandbox: read-only
+          codex-args: '["--ephemeral","--output-schema",".github/codex/schemas/daily-private-ideas.schema.json"]'
+
+  publish:
+    needs: generate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Create exactly five private repositories
+        env:
+          GH_TOKEN: ${{ secrets.REPO_CREATOR_TOKEN }}
+          IDEA_OWNER: ${{ github.repository_owner }}
+          IDEAS_JSON: ${{ needs.generate.outputs.ideas }}
+        run: node scripts/create-daily-private-ideas.mjs

@@ -51,9 +51,11 @@ const modelOptions = [
 export function StudioChat({
   initialPrompt = "",
   lockedModel,
+  repositoryHandoff,
 }: {
   initialPrompt?: string;
   lockedModel?: string;
+  repositoryHandoff?: { owner: string; repo: string; fullName: string };
 } = {}) {
   const [model, setModel] = useState(lockedModel ?? "gemma4:26b-mlx");
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(false);
@@ -68,6 +70,9 @@ export function StudioChat({
   const [isTemporary, setIsTemporary] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [buildProgress, setBuildProgress] = useState<string[]>([]);
+  const [pendingBuildId, setPendingBuildId] = useState("");
+  const [isApplyingBuild, setIsApplyingBuild] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioCaptureRef = useRef<AudioCapture | null>(null);
@@ -383,6 +388,30 @@ export function StudioChat({
     let completeAnswer = "";
 
     try {
+      if (repositoryHandoff && composerMode === "chat") {
+        setBuildProgress([]);
+        setPendingBuildId("");
+        const response = await fetch("/api/github/build", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner: repositoryHandoff.owner, repo: repositoryHandoff.repo, task: userContent }) });
+        if (!response.ok || !response.body) throw new Error("The repository build could not start.");
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let pending = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          pending += decoder.decode(value, { stream: true });
+          const lines = pending.split("\n"); pending = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const update = JSON.parse(line) as { type: "progress" | "final" | "error"; message?: string; content?: string; error?: string; buildId?: string };
+            if (update.type === "progress" && update.message) setBuildProgress((current) => [...current, update.message!]);
+            if (update.type === "error") throw new Error(update.error || "The repository build failed.");
+            if (update.type === "final") { completeAnswer = update.content ?? "Build ready."; setPendingBuildId(update.buildId ?? ""); setBuildProgress([]); setMessages([...conversationBeforeAnswer, { id: assistantId, role: "assistant", content: completeAnswer }]); }
+          }
+        }
+        return;
+      }
+
       if (composerMode === "image") {
         const response = await fetch("/api/generate-image", {
           method: "POST",
@@ -486,6 +515,7 @@ export function StudioChat({
         });
       }
     } catch (failure) {
+      setBuildProgress([]);
       setMessages(conversationBeforeAnswer);
       setError(
         failure instanceof Error ? failure.message : "Gemma could not answer.",
@@ -493,6 +523,19 @@ export function StudioChat({
     } finally {
       setIsRunning(false);
     }
+  }
+
+  async function applyPendingBuild() {
+    if (!pendingBuildId || isApplyingBuild) return;
+    setIsApplyingBuild(true); setError("");
+    try {
+      const response = await fetch("/api/github/build/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ buildId: pendingBuildId }) });
+      const body = (await response.json()) as { message?: string; error?: string };
+      if (!response.ok) throw new Error(body.error || "The approved build could not be applied.");
+      setMessages((current) => current.map((message, index) => index === current.length - 1 && message.role === "assistant" ? { ...message, content: `${message.content}\n\n✅ ${body.message}` } : message));
+      setPendingBuildId("");
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "The approved build could not be applied."); }
+    finally { setIsApplyingBuild(false); }
   }
 
   async function regenerateLastResponse(nextModel: string) {
@@ -725,23 +768,15 @@ export function StudioChat({
                         </MarkdownResponse>
                       </div>
                       {index === messages.length - 1 && !isRunning && (
-                        <ResponseActions
-                          content={message.content}
-                          currentModel={model}
-                          onRegenerate={regenerateLastResponse}
-                        />
+                        <>{pendingBuildId ? <button type="button" onClick={applyPendingBuild} disabled={isApplyingBuild} className="mt-5 rounded-xl border border-sky-300/30 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-100 hover:bg-sky-400/25 disabled:opacity-50">{isApplyingBuild ? "Applying & pushing…" : "Apply & push"}</button> : <ResponseActions content={message.content} currentModel={model} onRegenerate={regenerateLastResponse} />}</>
                       )}
                     </>
                   ) : (
-                    <div className="flex items-center gap-4 text-sm text-slate-500">
+                    <div className="flex items-start gap-4 text-sm text-slate-500">
                       <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500 text-xs font-bold text-white">
                         K
                       </span>
-                      <span className="animate-pulse">
-                        {composerMode === "image"
-                          ? "Creating…"
-                          : "Thinking…"}
-                      </span>
+                      {buildProgress.length ? <div className="space-y-2">{buildProgress.map((step, stepIndex) => <p key={`${stepIndex}-${step}`} className={stepIndex === buildProgress.length - 1 ? "animate-pulse text-sky-200" : "text-slate-600"}>{step}</p>)}</div> : <span className="animate-pulse">{composerMode === "image" ? "Creating…" : "Thinking…"}</span>}
                     </div>
                   )}
                 </article>
@@ -944,7 +979,7 @@ export function StudioChat({
             : composerMode === "image"
             ? "Z-Image Turbo creates images locally on this Mac."
             : lockedModel
-              ? "GitHub coding handoff · fixed to the local 31B model."
+              ? repositoryHandoff ? `Two-stage secure build for ${repositoryHandoff.fullName} · fixed to local 31B agents.` : "GitHub coding handoff · fixed to the local 31B model."
               : `${selectedModel.label} runs locally. Check important information.`}
         </p>
       </div>
