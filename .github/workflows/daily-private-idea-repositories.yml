@@ -14,35 +14,53 @@ permissions:
   contents: read
 
 jobs:
-  generate:
-    runs-on: ubuntu-latest
-    outputs:
-      ideas: ${{ steps.codex.outputs.final-message }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-
-      - name: Design exactly five build-ready ideas
-        id: codex
-        uses: openai/codex-action@v1
-        with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: .github/codex/prompts/daily-private-ideas.md
-          sandbox: read-only
-          codex-args: '["--ephemeral","--output-schema",".github/codex/schemas/daily-private-ideas.schema.json"]'
-
-  publish:
-    needs: generate
+  create-five-private-repositories:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+
+      - name: Read the existing owned-repository catalogue
+        env:
+          GH_TOKEN: ${{ secrets.REPO_CREATOR_TOKEN }}
+        run: gh api 'user/repos?affiliation=owner&per_page=100&sort=updated' > /tmp/owned-repositories.json
+
+      - name: Generate with Gemini
+        if: ${{ vars.IDEA_AI_PROVIDER == '' || vars.IDEA_AI_PROVIDER == 'gemini' }}
+        env:
+          AI_PROVIDER: gemini
+          AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AI_MODEL: ${{ vars.GEMINI_IDEA_MODEL || 'gemini-3.6-flash' }}
+          OWNED_REPOSITORIES_FILE: /tmp/owned-repositories.json
+          IDEAS_OUTPUT_FILE: /tmp/daily-ideas.json
+        run: node scripts/generate-daily-private-ideas.mjs
+
+      - name: Generate with OpenAI
+        if: ${{ vars.IDEA_AI_PROVIDER == 'openai' }}
+        env:
+          AI_PROVIDER: openai
+          AI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AI_MODEL: ${{ vars.OPENAI_IDEA_MODEL }}
+          AI_BASE_URL: ${{ vars.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
+          OWNED_REPOSITORIES_FILE: /tmp/owned-repositories.json
+          IDEAS_OUTPUT_FILE: /tmp/daily-ideas.json
+        run: node scripts/generate-daily-private-ideas.mjs
+
+      - name: Generate with Kimi
+        if: ${{ vars.IDEA_AI_PROVIDER == 'kimi' }}
+        env:
+          AI_PROVIDER: kimi
+          AI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          AI_MODEL: ${{ vars.KIMI_IDEA_MODEL }}
+          AI_BASE_URL: ${{ vars.KIMI_BASE_URL }}
+          OWNED_REPOSITORIES_FILE: /tmp/owned-repositories.json
+          IDEAS_OUTPUT_FILE: /tmp/daily-ideas.json
+        run: node scripts/generate-daily-private-ideas.mjs
 
       - name: Create exactly five private repositories
         env:
           GH_TOKEN: ${{ secrets.REPO_CREATOR_TOKEN }}
           IDEA_OWNER: ${{ github.repository_owner }}
-          IDEAS_JSON: ${{ needs.generate.outputs.ideas }}
+          IDEAS_FILE: /tmp/daily-ideas.json
         run: node scripts/create-daily-private-ideas.mjs

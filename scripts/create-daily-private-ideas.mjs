@@ -81,8 +81,10 @@ async function github(path, options = {}) {
 
 async function main() {
   const owner = process.env.IDEA_OWNER;
-  if (!owner || !process.env.GH_TOKEN || !process.env.IDEAS_JSON) fail("Required cloud secrets or idea output are missing.");
-  const ideas = validateIdeas(JSON.parse(process.env.IDEAS_JSON));
+  const ideasFile = process.env.IDEAS_FILE;
+  const ideasJson = ideasFile ? await (await import("node:fs/promises")).readFile(ideasFile, "utf8") : process.env.IDEAS_JSON;
+  if (!owner || !process.env.GH_TOKEN || !ideasJson) fail("Required cloud secrets or idea output are missing.");
+  const ideas = validateIdeas(JSON.parse(ideasJson));
   const date = singaporeDate();
 
   for (let index = 0; index < ideas.length; index += 1) {
