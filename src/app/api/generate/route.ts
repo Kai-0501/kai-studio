@@ -19,22 +19,10 @@ import {
 } from "@/lib/memory/session";
 import type { RetrievedMemory } from "@/types/memory";
 import { recordPerformance } from "@/lib/performance-store";
-import {
-  ensureHuggingFaceModel,
-  huggingFaceModelId,
-  isHuggingFaceModel,
-} from "@/lib/local-model-runtime";
+import { ensureHuggingFaceModel, isHuggingFaceModel } from "@/lib/local-model-runtime";
 
 export const runtime = "nodejs";
 
-const allowedModels = new Set([
-  "gemma4:12b-mlx",
-  "gemma4:26b-mlx",
-  "gemma4:31b-mlx",
-  huggingFaceModelId,
-]);
-
-const visionExtractionModel = "glm-ocr";
 const ollamaChatUrl = "http://127.0.0.1:11434/api/chat";
 
 type ChatMessage = {
@@ -46,6 +34,7 @@ type ChatMessage = {
 async function extractVisualEvidence(
   message: ChatMessage,
   signal: AbortSignal,
+  visionModel: string,
 ) {
   if (!message.images?.length) return message;
 
@@ -53,7 +42,7 @@ async function extractVisualEvidence(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: visionExtractionModel,
+      model: visionModel,
       stream: false,
       messages: [
         {
@@ -198,20 +187,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (typeof body.model !== "string" || !allowedModels.has(body.model)) {
-    return Response.json({ error: "Select a supported Gemma model." }, { status: 400 });
+  if (typeof body.model !== "string" || !body.model.trim()) {
+    return Response.json({ error: "Select an installed local model." }, { status: 400 });
   }
 
   let modelResponse: Response;
   const huggingFace = isHuggingFaceModel(body.model as string);
 
   try {
+    const settings = await readSettings();
     const conversationMessages = await Promise.all(
       rawMessages.map((message) =>
-        extractVisualEvidence(message as ChatMessage, request.signal),
+        extractVisualEvidence(
+          message as ChatMessage,
+          request.signal,
+          settings.modelAssignments.vision,
+        ),
       ),
     );
-    const settings = await readSettings();
     const useLongTermMemory =
       body.useLongTermMemory === true && settings.longTermMemoryEnabled;
     const memorySessionId =

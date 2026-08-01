@@ -31,9 +31,7 @@ export async function GET() {
     if (!response.ok) throw new Error(`Ollama returned ${response.status}.`);
 
     const body = (await response.json()) as OllamaTagsResponse;
-    const models = (body.models ?? [])
-      .filter((model) => model.name.startsWith("gemma4:"))
-      .map((model) => ({
+    const models = (body.models ?? []).map((model) => ({
         name: model.name,
         size: model.size,
         modifiedAt: model.modified_at,

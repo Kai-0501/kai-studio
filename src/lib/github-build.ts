@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -7,7 +7,7 @@ const execFileAsync = promisify(execFile);
 const ignored = new Set([".git", "node_modules", ".next", "dist", "build", "coverage", "vendor"]);
 const textExtensions = new Set([".c", ".cpp", ".css", ".go", ".html", ".java", ".js", ".json", ".jsx", ".md", ".mjs", ".py", ".rs", ".sh", ".sql", ".swift", ".toml", ".ts", ".tsx", ".txt", ".yaml", ".yml"]);
 
-export type PendingBuild = { id: string; owner: string; repo: string; defaultBranch: string; summary: string; securitySummary: string; files: { path: string; content: string }[]; verification: string[]; createdAt: string };
+export type PendingBuild = { id: string; owner: string; repo: string; defaultBranch: string; task: string; summary: string; securitySummary: string; files: { path: string; content: string }[]; verification: string[]; createdAt: string };
 export type AppliedBuild = { buildId: string; owner: string; repo: string; branch: string; summary: string; checks: CheckResult[]; commit: string; createdAt: string };
 export type CheckResult = { name: string; command: string; passed: boolean; output: string; durationMs: number };
 
@@ -58,7 +58,36 @@ export async function repositorySnapshot(root: string) {
 export function safeTarget(root: string, requested: string) {
   if (!requested || path.isAbsolute(requested) || requested.includes("\0")) throw new Error("The coding agent proposed an invalid file path.");
   const target = path.resolve(root, requested);
-  if (!target.startsWith(`${path.resolve(root)}${path.sep}`) || requested.startsWith(".git/")) throw new Error("The coding agent tried to write outside the repository.");
+  const relative = path.relative(path.resolve(root), target);
+  if (!target.startsWith(`${path.resolve(root)}${path.sep}`) || relative.split(path.sep).includes(".git")) throw new Error("The coding agent tried to write outside the repository.");
+  return target;
+}
+
+export async function safeWriteTarget(root: string, requested: string) {
+  const target = safeTarget(root, requested);
+  const relative = path.relative(path.resolve(root), target);
+  let cursor = path.resolve(root);
+  for (const segment of relative.split(path.sep).slice(0, -1)) {
+    cursor = path.join(cursor, segment);
+    try {
+      if ((await lstat(cursor)).isSymbolicLink()) throw new Error("The coding agent tried to write through a repository symlink.");
+    } catch (error) {
+      const failure = error as NodeJS.ErrnoException;
+      if (failure.code !== "ENOENT") throw error;
+      break;
+    }
+  }
+  return target;
+}
+
+export async function safeReadTarget(root: string, requested: string) {
+  const target = safeTarget(root, requested);
+  const relative = path.relative(path.resolve(root), target);
+  let cursor = path.resolve(root);
+  for (const segment of relative.split(path.sep)) {
+    cursor = path.join(cursor, segment);
+    if ((await lstat(cursor)).isSymbolicLink()) throw new Error("The coding agent tried to read through a repository symlink.");
+  }
   return target;
 }
 
@@ -114,6 +143,20 @@ export async function runProjectChecks(root: string): Promise<CheckResult[]> {
     }
   }
   return results;
+}
+
+export async function runBrowserChecks(root: string): Promise<CheckResult> {
+  const checks = await projectChecks(root);
+  const browser = checks.find((check) => check.name === "test:e2e");
+  if (!browser) return { name: "test:e2e", command: "not configured", passed: false, output: "This repository does not declare a test:e2e script.", durationMs: 0 };
+  const started = Date.now();
+  try {
+    const result = await command(browser.file, browser.args, root);
+    return { name: browser.name, command: `${path.basename(browser.file)} ${browser.args.join(" ")}`, passed: true, output: `${result.stdout || ""}${result.stderr || ""}`.slice(-12_000), durationMs: Date.now() - started };
+  } catch (error) {
+    const failure = error as { stdout?: string; stderr?: string; message?: string };
+    return { name: browser.name, command: `${path.basename(browser.file)} ${browser.args.join(" ")}`, passed: false, output: `${failure.stdout || ""}${failure.stderr || ""}${failure.message || ""}`.slice(-12_000), durationMs: Date.now() - started };
+  }
 }
 
 export async function saveAppliedBuild(build: AppliedBuild) {

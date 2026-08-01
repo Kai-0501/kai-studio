@@ -9,6 +9,17 @@ const temporaryFile = path.join(dataDirectory, "settings.tmp.json");
 
 const defaultSettings: KaiStudioSettings = {
   defaultModel: "gemma4:12b-mlx",
+  modelAssignments: {
+    chat: "gemma4:26b-mlx",
+    meeting: "gemma4:12b-mlx",
+    editorial: "gemma4:12b-mlx",
+    account: "gemma4:26b-mlx",
+    general: "gemma4:26b-mlx",
+    coding: "qwen3.6:27b-mtp-q4_K_M",
+    security: "gemma4:31b-mlx",
+    vision: "glm-ocr",
+    diagnostics: "gemma4:31b-mlx",
+  },
   longTermMemoryEnabled: true,
   memoryDebugEnabled: false,
 };
@@ -16,7 +27,8 @@ const defaultSettings: KaiStudioSettings = {
 export async function readSettings(): Promise<KaiStudioSettings> {
   try {
     const contents = await readFile(settingsFile, "utf8");
-    return { ...defaultSettings, ...(JSON.parse(contents) as KaiStudioSettings) };
+    const saved = JSON.parse(contents) as Partial<KaiStudioSettings>;
+    return { ...defaultSettings, ...saved, modelAssignments: { ...defaultSettings.modelAssignments, ...(saved.modelAssignments ?? {}) } };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultSettings;
     throw error;

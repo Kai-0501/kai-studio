@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useRef, useState } from "react";
 import { FollowUpChat } from "@/components/follow-up-chat";
 import { MarkdownResponse } from "@/components/markdown-response";
 import {
@@ -9,6 +9,7 @@ import {
   MAX_IMAGES,
   type ImageAttachment,
 } from "@/lib/image-attachments";
+import { useInstalledModels } from "@/lib/use-installed-models";
 
 type Mode = "chat" | "learn";
 type CopyStatus = "idle" | "copied" | "failed";
@@ -30,12 +31,6 @@ const initialLearningForm: LearningForm = {
   existingKnowledge: "",
   constraints: "",
 };
-
-const modelOptions = [
-  { value: "gemma4:26b-mlx", label: "Gemma 4 26B · Fast and capable" },
-  { value: "gemma4:31b-mlx", label: "Gemma 4 31B · Best quality" },
-  { value: "hf:gemma4-26b-a4b-q4", label: "Gemma 4 26B A4B · Hugging Face" },
-];
 
 function buildLearningPrompt(values: LearningForm) {
   return `# ROLE
@@ -87,8 +82,8 @@ After this initial response, continue as a normal direct conversation. Respond t
 }
 
 export function GeneralIntelligenceRunner() {
+  const { options: modelOptions, selectedModel: model, setSelectedModel: setModel } = useInstalledModels("general", "gemma4:26b-mlx");
   const [mode, setMode] = useState<Mode>("chat");
-  const [model, setModel] = useState("gemma4:26b-mlx");
   const [activeRunModel, setActiveRunModel] = useState("gemma4:26b-mlx");
   const [sessionTitle, setSessionTitle] = useState("");
   const [chatMessage, setChatMessage] = useState("");
@@ -104,22 +99,6 @@ export function GeneralIntelligenceRunner() {
   const [outputCopy, setOutputCopy] = useState<CopyStatus>("idle");
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((response) => response.json() as Promise<{ defaultModel?: string }>)
-      .then((settings) => {
-        if (
-          settings.defaultModel === "gemma4:26b-mlx" ||
-          settings.defaultModel === "gemma4:31b-mlx"
-        ) {
-          setModel(settings.defaultModel);
-        }
-      })
-      .catch(() => {
-        // Keep 26B as the default for general-purpose work.
-      });
-  }, []);
 
   function changeMode(nextMode: Mode) {
     setMode(nextMode);

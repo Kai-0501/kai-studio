@@ -1,7 +1,20 @@
 export type KaiStudioSettings = {
   defaultModel: string;
+  modelAssignments: ModelAssignments;
   longTermMemoryEnabled: boolean;
   memoryDebugEnabled: boolean;
+};
+
+export type ModelAssignments = {
+  chat: string;
+  meeting: string;
+  editorial: string;
+  account: string;
+  general: string;
+  coding: string;
+  security: string;
+  vision: string;
+  diagnostics: string;
 };
 
 export type LocalModel = {

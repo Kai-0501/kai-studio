@@ -4,6 +4,7 @@ import { ChangeEvent, useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import type {
   KaiStudioSettings,
+  ModelAssignments,
   SystemStatus,
 } from "@/types/settings";
 import type { KaiMemoryStatus } from "@/types/memory";
@@ -13,6 +14,7 @@ import { DashboardBackLink } from "@/components/dashboard-back-link";
 export default function SettingsPage() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [defaultModel, setDefaultModel] = useState("gemma4:12b-mlx");
+  const [modelAssignments, setModelAssignments] = useState<ModelAssignments>({ chat: "gemma4:26b-mlx", meeting: "gemma4:12b-mlx", editorial: "gemma4:12b-mlx", account: "gemma4:26b-mlx", general: "gemma4:26b-mlx", coding: "qwen3.6:27b-mtp-q4_K_M", security: "gemma4:31b-mlx", vision: "glm-ocr", diagnostics: "gemma4:31b-mlx" });
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(true);
   const [memoryDebugEnabled, setMemoryDebugEnabled] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -41,6 +43,7 @@ export default function SettingsPage() {
         (await settingsResponse.json()) as KaiStudioSettings;
       setStatus(systemStatus);
       setDefaultModel(settings.defaultModel);
+      setModelAssignments(settings.modelAssignments);
       setLongTermMemoryEnabled(settings.longTermMemoryEnabled);
       setMemoryDebugEnabled(settings.memoryDebugEnabled);
       const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
@@ -68,6 +71,7 @@ export default function SettingsPage() {
           (await settingsResponse.json()) as KaiStudioSettings;
         setStatus(systemStatus);
         setDefaultModel(settings.defaultModel);
+        setModelAssignments(settings.modelAssignments);
         setLongTermMemoryEnabled(settings.longTermMemoryEnabled);
         setMemoryDebugEnabled(settings.memoryDebugEnabled);
         const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
@@ -90,12 +94,13 @@ export default function SettingsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         defaultModel,
+        modelAssignments,
         longTermMemoryEnabled,
         memoryDebugEnabled,
       }),
     });
 
-    setMessage(response.ok ? "Default model saved ✓" : "Could not save settings.");
+    setMessage(response.ok ? "Model settings saved ✓" : "Could not save settings.");
     setSaving(false);
   }
 
@@ -350,6 +355,33 @@ export default function SettingsPage() {
             </div>
           </section>
 
+          <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">
+            <div>
+              <h2 className="font-semibold">Model assignments</h2>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+                Choose which installed model powers each part of Kai Studio. Coding assignments inherit the complete bounded coding toolbelt automatically; security remains a separate review role.
+              </p>
+            </div>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              {(Object.keys(modelAssignments) as Array<keyof ModelAssignments>).map((key) => (
+                <label key={key} className="rounded-xl border border-white/10 bg-[#0b0f18] p-4">
+                  <span className="block text-sm font-medium capitalize">{key === "general" ? "General Intelligence" : key === "account" ? "Account Intelligence" : key === "editorial" ? "Editorial Intelligence" : key === "meeting" ? "Meeting Intelligence" : key}</span>
+                  <select
+                    value={modelAssignments[key]}
+                    onChange={(event) => { setModelAssignments((current) => ({ ...current, [key]: event.target.value })); setMessage(""); }}
+                    className="mt-3 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-sky-400/40"
+                  >
+                    {[...(status?.models ?? []), ...(status?.huggingFaceModels ?? [])].map((model) => <option key={`${key}-${model.name}`} value={model.name}>{displayName(model.name)}</option>)}
+                  </select>
+                </label>
+              ))}
+            </div>
+            <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-5">
+              <p className="text-xs text-slate-500">Newly downloaded Ollama models appear after opening Settings or pressing Check connection.</p>
+              <button type="button" onClick={saveDefault} disabled={saving} className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-2.5 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:opacity-40">{saving ? "Saving…" : "Save assignments"}</button>
+            </div>
+          </section>
+
           <section className="mt-6 rounded-2xl border border-violet-400/20 bg-violet-400/[0.035] p-6">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">
@@ -503,11 +535,8 @@ export default function SettingsPage() {
 }
 
 function displayName(model: string) {
-  if (model.startsWith("hf:")) return "Gemma 4 26B A4B · Hugging Face";
-  if (model.includes("12b")) return "Gemma 4 12B · Fast";
-  if (model.includes("26b")) return "Gemma 4 26B · Balanced";
-  if (model.includes("31b")) return "Gemma 4 31B · Best quality";
-  return model;
+  const clean = model.replace(/^hf:/, "").replace(/:latest$/, "").replaceAll("-", " ");
+  return model.startsWith("hf:") ? `${clean} · Hugging Face` : clean;
 }
 
 function formatBytes(bytes: number) {

@@ -1,13 +1,8 @@
 "use client";
 
-import { useState } from "react";
-
-const modelOptions = [
-  { value: "gemma4:12b-mlx", label: "Gemma 4 12B" },
-  { value: "gemma4:26b-mlx", label: "Gemma 4 26B" },
-  { value: "gemma4:31b-mlx", label: "Gemma 4 31B" },
-  { value: "hf:gemma4-26b-a4b-q4", label: "Gemma 4 26B A4B · Hugging Face" },
-];
+import { useEffect, useState } from "react";
+import { localModelLabel } from "@/lib/use-installed-models";
+import type { SystemStatus } from "@/types/settings";
 
 export function ResponseActions({
   content,
@@ -22,6 +17,19 @@ export function ResponseActions({
 }) {
   const [copied, setCopied] = useState(false);
   const [showModels, setShowModels] = useState(false);
+  const [modelOptions, setModelOptions] = useState([{ value: currentModel, label: localModelLabel(currentModel) }]);
+
+  useEffect(() => {
+    fetch("/api/system/status")
+      .then((response) => response.json())
+      .then((status: SystemStatus) => {
+        setModelOptions([...status.models, ...(status.huggingFaceModels ?? [])].map((model) => ({
+          value: model.name,
+          label: localModelLabel(model.name),
+        })));
+      })
+      .catch(() => undefined);
+  }, [currentModel]);
 
   async function copyResponse() {
     await navigator.clipboard.writeText(content);

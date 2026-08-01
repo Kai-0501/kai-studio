@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const { app, BrowserWindow, dialog, session, shell } = require("electron");
+const { app, BrowserWindow, dialog, powerSaveBlocker, session, shell } = require("electron");
 const { fork, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -14,6 +14,8 @@ let githubSyncTimer;
 let modelControlServer;
 let llamaProcess;
 let activeHuggingFaceModel;
+let activeBuildMonitor;
+let activeBuildPowerBlocker;
 
 const huggingFaceModels = {
   "hf:gemma4-26b-a4b-q4": {
@@ -23,6 +25,30 @@ const huggingFaceModels = {
     draft: "/Users/kai/Models/gemma4-mtp/mtp-gemma-4-26B-A4B-it.gguf",
   },
 };
+
+function discoverHuggingFaceModels(root = "/Users/kai/Models", depth = 0) {
+  if (!fs.existsSync(root) || depth > 5) return;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      discoverHuggingFaceModels(fullPath, depth + 1);
+      continue;
+    }
+    if (!entry.name.toLowerCase().endsWith(".gguf") || /^(mmproj|mtp|draft)/i.test(entry.name)) continue;
+    if (Object.values(huggingFaceModels).some((definition) => definition.model === fullPath)) continue;
+    const base = path.basename(entry.name, ".gguf").replace(/-00001-of-\d+$/i, "");
+    let id = `hf:auto:${base.toLowerCase().replace(/[^a-z0-9.]+/g, "-").replace(/^-|-$/g, "")}`;
+    let suffix = 2;
+    while (huggingFaceModels[id] && huggingFaceModels[id].model !== fullPath) id = `${id}-${suffix++}`;
+    const siblings = fs.readdirSync(root);
+    const projector = siblings.find((name) => /^mmproj.*\.gguf$/i.test(name));
+    huggingFaceModels[id] = {
+      name: base.replaceAll("-", " "),
+      model: fullPath,
+      ...(projector ? { projector: path.join(root, projector) } : {}),
+    };
+  }
+}
 
 // Expose the full renderer accessibility tree so macOS app-intelligence tools
 // can inspect and capture Kai Studio just like a native browser window.
@@ -123,6 +149,7 @@ function llamaServerPath() {
 }
 
 async function ensureHuggingFaceModel(modelId) {
+  discoverHuggingFaceModels();
   const definition = huggingFaceModels[modelId];
   if (!definition || !fs.existsSync(definition.model)) {
     throw new Error("That Hugging Face model is not installed on this Mac.");
@@ -170,6 +197,7 @@ function startModelControlServer() {
   modelControlServer = http.createServer(async (request, response) => {
     response.setHeader("Content-Type", "application/json");
     if (request.method === "GET" && request.url === "/models") {
+      discoverHuggingFaceModels();
       const models = Object.entries(huggingFaceModels).flatMap(([id, definition]) =>
         fs.existsSync(definition.model)
           ? [{ id, name: definition.name, size: fs.statSync(definition.model).size }]
@@ -241,6 +269,35 @@ function scheduleDailyGitHubSync() {
   }, nextRun.getTime() - now.getTime());
 }
 
+function readActiveBuild() {
+  return new Promise((resolve) => {
+    const request = http.get(`http://127.0.0.1:${PORT}/api/github/build/active`, (response) => {
+      let body = "";
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => {
+        try { resolve(Boolean(JSON.parse(body)?.job)); }
+        catch { resolve(false); }
+      });
+    });
+    request.on("error", () => resolve(false));
+    request.setTimeout(2_000, () => { request.destroy(); resolve(false); });
+  });
+}
+
+function startActiveBuildMonitor() {
+  const check = async () => {
+    const active = await readActiveBuild();
+    if (active && activeBuildPowerBlocker === undefined) {
+      activeBuildPowerBlocker = powerSaveBlocker.start("prevent-app-suspension");
+    } else if (!active && activeBuildPowerBlocker !== undefined) {
+      if (powerSaveBlocker.isStarted(activeBuildPowerBlocker)) powerSaveBlocker.stop(activeBuildPowerBlocker);
+      activeBuildPowerBlocker = undefined;
+    }
+  };
+  void check();
+  activeBuildMonitor = setInterval(check, 5_000);
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -293,6 +350,7 @@ app.whenReady().then(async () => {
     await syncCloudMemory();
     await syncGitHubRepositories();
     scheduleDailyGitHubSync();
+    startActiveBuildMonitor();
     createWindow();
   } catch (error) {
     dialog.showErrorBox("Kai Studio could not start", error.message);
@@ -307,6 +365,10 @@ app.whenReady().then(async () => {
 app.on("before-quit", () => {
   app.isQuitting = true;
   clearTimeout(githubSyncTimer);
+  clearInterval(activeBuildMonitor);
+  if (activeBuildPowerBlocker !== undefined && powerSaveBlocker.isStarted(activeBuildPowerBlocker)) {
+    powerSaveBlocker.stop(activeBuildPowerBlocker);
+  }
   serverProcess?.kill();
   llamaProcess?.kill();
   modelControlServer?.close();

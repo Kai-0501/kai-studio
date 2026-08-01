@@ -1,0 +1,28 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { modelRegistry, roleRoutes } from "../src/lib/models/config.ts";
+import { modelSatisfiesRoute } from "../src/lib/models/runtime.ts";
+
+test("secure coding roles route to separate configured models", () => {
+  const coder = modelRegistry.get(roleRoutes["coder.primary"].primary);
+  const preflight = modelRegistry.get(roleRoutes["security.preflight"].primary);
+  const postflight = modelRegistry.get(roleRoutes["security.postflight"].primary);
+  assert.equal(coder?.providerModel, "qwen3.6:27b-mtp-q4_K_M");
+  assert.equal(preflight?.providerModel, "gemma4:31b-mlx");
+  assert.equal(postflight?.id, preflight?.id);
+  assert.notEqual(coder?.id, preflight?.id);
+});
+
+test("capability validation rejects models lacking verified tool support", () => {
+  const security = modelRegistry.get("local.gemma4-31b-security");
+  const coder = modelRegistry.get("local.qwen3.6-27b-coder");
+  assert.ok(security && coder);
+  assert.equal(modelSatisfiesRoute(security, ["coding", "tools", "structured-output"], true), false);
+  assert.equal(modelSatisfiesRoute(coder, ["coding", "tools", "structured-output"], true), true);
+});
+
+test("local-only routes reject cloud models", () => {
+  const cloud = modelRegistry.get("cloud.gemini-orchestrator");
+  assert.ok(cloud);
+  assert.equal(modelSatisfiesRoute({ ...cloud, enabled: true }, ["orchestration"], true), false);
+});

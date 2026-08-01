@@ -25,8 +25,9 @@ export default function RunDetailPage() {
   }, [id]);
 
   const isChat =
-    run?.workflowId === "general-intelligence" &&
-    (run.inputLabel === "Chat" || run.salespersonName === "Chat");
+    run?.workflowId === "diagnostics" ||
+    (run?.workflowId === "general-intelligence" &&
+    (run.inputLabel === "Chat" || run.salespersonName === "Chat"));
 
   if (run && isChat) {
     return (

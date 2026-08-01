@@ -375,11 +375,18 @@ export function HistoryChat({
                     {index === conversation.length - 1 &&
                       message.content &&
                       !isRunning && (
+                        <>
                         <ResponseActions
                           content={message.content}
                           currentModel={model}
                           onRegenerate={regenerateLastResponse}
                         />
+                        {run.workflowId === "diagnostics" && (
+                          <Link href={`/chat/github/Kai-0501/kai-studio?autostart=1&diagnosticRun=${encodeURIComponent(run.id)}`} className="mt-4 ml-11 inline-flex rounded-xl bg-sky-400 px-4 py-2.5 text-sm font-medium text-slate-950 hover:bg-sky-300">
+                            Build selected plan with the coding agent →
+                          </Link>
+                        )}
+                        </>
                       )}
                   </>
                 )}

@@ -21,7 +21,7 @@ export function GitHubRepositoryDetail({ repository }: { repository: OwnedGitHub
             </div>
           </div>
           <div className="flex shrink-0 flex-col gap-2">
-            <Link href={`/chat/github/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`} className="rounded-xl bg-sky-500 px-5 py-3 text-center text-sm font-medium text-black hover:bg-sky-400">Build with Gemma 4 31B</Link>
+            <Link href={`/chat/github/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}?autostart=1`} className="rounded-xl bg-sky-500 px-5 py-3 text-center text-sm font-medium text-black hover:bg-sky-400">Build with Qwen 3.6 27B</Link>
             <a href={repository.url} target="_blank" rel="noreferrer" className="rounded-xl border border-white/10 px-5 py-2.5 text-center text-sm text-slate-300 hover:border-sky-400/40">Open on GitHub ↗</a>
           </div>
         </div>

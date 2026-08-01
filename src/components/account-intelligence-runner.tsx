@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { FollowUpChat } from "@/components/follow-up-chat";
 import { MarkdownResponse } from "@/components/markdown-response";
+import { useInstalledModels } from "@/lib/use-installed-models";
 
 type AccountForm = {
   companyName: string;
@@ -25,12 +26,6 @@ const initialForm: AccountForm = {
   salesObjective: "Prepare for a discovery meeting",
   research: "",
 };
-
-const modelOptions = [
-  { value: "gemma4:26b-mlx", label: "Gemma 4 26B · Balanced" },
-  { value: "gemma4:31b-mlx", label: "Gemma 4 31B · Best quality" },
-  { value: "hf:gemma4-26b-a4b-q4", label: "Gemma 4 26B A4B · Hugging Face" },
-];
 
 function buildAccountPrompt(values: AccountForm) {
   return `# ROLE
@@ -137,9 +132,9 @@ async function copyText(text: string) {
 }
 
 export function AccountIntelligenceRunner() {
+  const { options: modelOptions, selectedModel: model, setSelectedModel: setModel } = useInstalledModels("account", "gemma4:26b-mlx");
   const [values, setValues] = useState<AccountForm>(initialForm);
   const [sourceMode, setSourceMode] = useState<"text" | "pdf">("text");
-  const [model, setModel] = useState("gemma4:26b-mlx");
   const [compiledPrompt, setCompiledPrompt] = useState("");
   const [output, setOutput] = useState("");
   const [formError, setFormError] = useState("");
@@ -151,22 +146,6 @@ export function AccountIntelligenceRunner() {
   const [pdfError, setPdfError] = useState("");
   const [extractingPdf, setExtractingPdf] = useState(false);
   const [outputCopy, setOutputCopy] = useState<CopyStatus>("idle");
-
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((response) => response.json() as Promise<{ defaultModel?: string }>)
-      .then((settings) => {
-        if (
-          settings.defaultModel === "gemma4:26b-mlx" ||
-          settings.defaultModel === "gemma4:31b-mlx"
-        ) {
-          setModel(settings.defaultModel);
-        }
-      })
-      .catch(() => {
-        // Keep the research-grade 26B default when settings cannot be loaded.
-      });
-  }, []);
 
   function updateField(field: keyof AccountForm, value: string) {
     setValues((current) => ({ ...current, [field]: value }));

@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { FollowUpChat } from "@/components/follow-up-chat";
 import { MarkdownResponse } from "@/components/markdown-response";
+import { useInstalledModels } from "@/lib/use-installed-models";
 
 type FormValues = {
   accountName: string;
@@ -108,28 +109,17 @@ async function copyText(text: string) {
 }
 
 export function MeetingIntelligenceRunner() {
+  const { options: modelOptions, selectedModel: model, setSelectedModel: setModel } = useInstalledModels("meeting", "gemma4:12b-mlx");
   const [values, setValues] = useState<FormValues>(emptyForm);
   const [compiledPrompt, setCompiledPrompt] = useState("");
   const [error, setError] = useState("");
   const [outputCopyStatus, setOutputCopyStatus] =
     useState<CopyStatus>("idle");
-  const [model, setModel] = useState("gemma4:12b-mlx");
   const [gemmaOutput, setGemmaOutput] = useState("");
   const [runError, setRunError] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
   const [savedRunId, setSavedRunId] = useState("");
-
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((response) => response.json() as Promise<{ defaultModel?: string }>)
-      .then((settings) => {
-        if (settings.defaultModel) setModel(settings.defaultModel);
-      })
-      .catch(() => {
-        // Keep the safe 12B default when settings cannot be loaded.
-      });
-  }, []);
 
   function updateField(field: keyof FormValues, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -338,9 +328,9 @@ export function MeetingIntelligenceRunner() {
               disabled={isRunning}
               className="w-full rounded-xl border border-white/10 bg-[#080b12] px-4 py-3 text-sm outline-none focus:border-violet-400/60"
             >
-              <option value="gemma4:12b-mlx">Gemma 4 12B · Fast</option>
-              <option value="gemma4:26b-mlx">Gemma 4 26B · Balanced</option>
-              <option value="gemma4:31b-mlx">Gemma 4 31B · Best quality</option>
+              {modelOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </select>
           </label>
         </div>

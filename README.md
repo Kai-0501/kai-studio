@@ -12,15 +12,24 @@ outputs, and memory stay local.
 
 ## Highlights
 
-- **Desktop chat** with selectable local Gemma models
+- **Desktop chat** with automatically discovered local models from Ollama and
+  Hugging Face-compatible runtimes
 - **Temporary chats** that use memory without adding history
 - **Tiered KaiLore memory** with human-editable Markdown records and local
   hybrid retrieval
 - **Local dictation** using Parakeet TDT 0.6B v2
 - **Local image generation** through Z-Image Turbo
 - **Owned-repository GitHub vault** that syncs only repositories belonging to
-  the authenticated account, excludes forks, and hands coding work to the
-  local Gemma 4 31B model
+  the authenticated account and excludes forks
+- **Two-stage secure builds**: a bounded Gemma security review runs first,
+  followed by a tool-using Qwen coding agent only after the repository passes
+  review
+- **Persistent background build sessions** that survive navigation and keep
+  running while Kai Studio is in the background
+- **Configurable model assignments** for chat, workflows, coding, security,
+  vision, and diagnostics without changing application code
+- **Read-only diagnostics agent** that audits Kai Studio, saves its report to
+  history, and can turn selected findings into implementation-ready plans
 - **Searchable workflow library** with:
   - Meeting Intelligence
   - Editorial Intelligence
@@ -32,6 +41,9 @@ outputs, and memory stay local.
 - **PDF extraction** for editorial and account-research workflows
 - **Generation telemetry**, including tokens per second by conversation and
   model
+- **Bounded three-tier coding memory** that keeps recent tool evidence hot,
+  compacts completed work into a trusted checkpoint, and stores the complete
+  event log locally for auditability
 
 ## Architecture
 
@@ -41,11 +53,15 @@ Electron desktop shell
         ▼
 Next.js application + local API routes
         │
-        ├── Ollama + managed llama.cpp → local chat and reasoning models
-        ├── Ollama → Z-Image Turbo
+        ├── Model-agnostic runtime → role and capability routing
+        │      ├── Ollama
+        │      ├── managed llama.cpp / Hugging Face models
+        │      ├── OpenAI-compatible endpoints
+        │      └── Gemini-compatible cloud orchestration
+        ├── Z-Image Turbo → local image generation
         ├── FluidAudio → Parakeet speech-to-text
         ├── GitHub CLI → owned repository metadata and README cache
-        └── Local filesystem + SQLite → history, settings and KaiLore memory
+        └── Local filesystem + SQLite → history, settings, telemetry and memory
 ```
 
 Kai Studio deliberately keeps model plumbing behind the interface. The user
@@ -55,6 +71,12 @@ local routing, persistence, and retrieval.
 For the memory design, see
 [docs/memory-architecture.md](docs/memory-architecture.md).
 
+For secure repository automation and bounded coding context, see
+[docs/secure-build-architecture.md](docs/secure-build-architecture.md).
+
+For model discovery and role routing, see
+[docs/model-runtime.md](docs/model-runtime.md).
+
 ## Technology
 
 - Next.js 16
@@ -62,7 +84,8 @@ For the memory design, see
 - TypeScript
 - Tailwind CSS
 - Electron
-- Ollama or Kai Studio's managed llama.cpp runtime
+- Ollama, Kai Studio's managed llama.cpp runtime, or another configured model
+  provider
 - Node.js SQLite
 - FluidAudio / Parakeet
 

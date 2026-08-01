@@ -6,31 +6,36 @@ import { AppShell } from "@/components/app-shell";
 import type { SavedRun } from "@/types/run";
 import type { GenerationPerformance } from "@/types/performance";
 import type { GitHubVaultStatus } from "@/types/github";
+import type { DiagnosticsJob } from "@/lib/diagnostics-jobs";
 
 export default function DashboardPage() {
   const [runs, setRuns] = useState<SavedRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [performance, setPerformance] = useState<GenerationPerformance[]>([]);
   const [github, setGitHub] = useState<GitHubVaultStatus | null>(null);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsJob | null>(null);
 
   useEffect(() => {
-    Promise.all([fetch("/api/runs"), fetch("/api/performance"), fetch("/api/github")])
-      .then(async ([runsResponse, performanceResponse, githubResponse]) => {
+    Promise.all([fetch("/api/runs"), fetch("/api/performance"), fetch("/api/github"), fetch("/api/diagnostics")])
+      .then(async ([runsResponse, performanceResponse, githubResponse, diagnosticsResponse]) => {
         setRuns((await runsResponse.json()) as SavedRun[]);
         setPerformance(
           (await performanceResponse.json()) as GenerationPerformance[],
         );
         setGitHub((await githubResponse.json()) as GitHubVaultStatus);
+        setDiagnostics((await diagnosticsResponse.json()) as DiagnosticsJob | null);
       })
       .finally(() => setLoading(false));
   }, []);
 
   const latestRun = runs[0];
   const latestPerformance = performance[0];
-  const messageCount = runs.reduce(
-    (total, run) => total + 2 + (run.followUps?.length ?? 0),
-    0,
-  );
+  async function startDiagnostics() {
+    const response = await fetch("/api/diagnostics", { method: "POST" });
+    const job = await response.json() as DiagnosticsJob;
+    setDiagnostics(job);
+    window.location.href = `/diagnostics/${job.id}`;
+  }
 
   return (
     <AppShell>
@@ -87,12 +92,15 @@ export default function DashboardPage() {
               detail="Meeting · Editorial · Account · General"
               href="/library"
             />
-            <StatCard
-              label="Messages"
-              value={loading ? "—" : String(messageCount)}
-              detail="Across saved conversations"
-              href="/history"
-            />
+            {diagnostics?.status === "running" ? (
+              <StatCard label="Diagnostics" value="Running" detail="Open the live diagnostic" href={`/diagnostics/${diagnostics.id}`} />
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+                <p className="text-sm text-slate-500">Diagnostics agent</p>
+                <p className="mt-4 text-2xl font-semibold">Ready</p>
+                <button onClick={startDiagnostics} className="mt-4 text-sm font-medium text-sky-300 hover:text-sky-200">Run diagnostics now →</button>
+              </div>
+            )}
           </div>
 
           <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">

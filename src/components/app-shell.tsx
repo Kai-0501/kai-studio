@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const navigation = [
   { label: "Dashboard", icon: "⌂", href: "/" },
@@ -19,6 +20,18 @@ const navigation = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [activeBuildHref, setActiveBuildHref] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => fetch("/api/github/build/active", { cache: "no-store" })
+      .then((response) => response.json() as Promise<{ active?: { href?: string } | null }>)
+      .then((body) => { if (!cancelled) setActiveBuildHref(body.active?.href ?? ""); })
+      .catch(() => { if (!cancelled) setActiveBuildHref(""); });
+    void refresh();
+    const timer = window.setInterval(refresh, 2_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [pathname]);
 
   return (
     <main className="flex min-h-screen bg-[#080b12] text-white">
@@ -35,6 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <nav className="mt-8 space-y-1">
           {navigation.map((item) => {
+            const href = item.label === "Chat" && activeBuildHref ? activeBuildHref : item.href;
             const active =
               pathname === item.href ||
               (item.label === "Runner" && pathname.startsWith("/workflows/")) ||
@@ -44,7 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             return (
               <Link
                 key={item.label}
-                href={item.href}
+                href={href}
                 className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
                   isActive
                     ? "bg-sky-500/15 text-sky-300"

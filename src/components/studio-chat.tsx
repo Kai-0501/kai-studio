@@ -42,7 +42,7 @@ type AudioCapture = {
 
 const MAX_RECORDING_SECONDS = 30;
 
-const modelOptions = [
+const fallbackModelOptions = [
   { value: "gemma4:12b-mlx", label: "Gemma 4 12B", detail: "Quick" },
   { value: "gemma4:26b-mlx", label: "Gemma 4 26B", detail: "Balanced" },
   { value: "gemma4:31b-mlx", label: "Gemma 4 31B", detail: "Deep" },
@@ -51,14 +51,17 @@ const modelOptions = [
 
 export function StudioChat({
   initialPrompt = "",
-  lockedModel,
   repositoryHandoff,
+  autoStart = false,
+  activeBuildJobId,
 }: {
   initialPrompt?: string;
-  lockedModel?: string;
   repositoryHandoff?: { owner: string; repo: string; fullName: string };
+  autoStart?: boolean;
+  activeBuildJobId?: string;
 } = {}) {
-  const [model, setModel] = useState(lockedModel ?? "gemma4:26b-mlx");
+  const [model, setModel] = useState("gemma4:26b-mlx");
+  const [modelOptions, setModelOptions] = useState(fallbackModelOptions);
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -80,27 +83,41 @@ export function StudioChat({
   const audioCaptureRef = useRef<AudioCapture | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const composerFormRef = useRef<HTMLFormElement>(null);
+  const applyBuildButtonRef = useRef<HTMLButtonElement>(null);
+  const autoStartTriggeredRef = useRef(false);
+  const resumedBuildRef = useRef("");
   const shouldAutoFollowRef = useRef(true);
   const sessionIdRef = useRef(crypto.randomUUID());
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then((response) =>
-        response.json() as Promise<{
+    const refreshModels = () => Promise.all([fetch("/api/settings"), fetch("/api/system/status")])
+      .then(async ([settingsResponse, statusResponse]) => {
+        const settings = await settingsResponse.json() as {
           defaultModel?: string;
+          modelAssignments?: { chat?: string; coding?: string };
           longTermMemoryEnabled?: boolean;
-        }>,
-      )
-      .then((settings) => {
-        if (!lockedModel && modelOptions.some((option) => option.value === settings.defaultModel)) {
-          setModel(settings.defaultModel!);
-        }
+        };
+        const status = await statusResponse.json() as { models?: Array<{ name: string }>; huggingFaceModels?: Array<{ name: string }> };
+        const installed = [...(status.models ?? []), ...(status.huggingFaceModels ?? [])].map((item) => ({ value: item.name, label: modelLabel(item.name), detail: item.name.startsWith("hf:") ? "Hugging Face" : "Local" }));
+        if (installed.length) setModelOptions(installed);
+        const preferred = repositoryHandoff
+          ? settings.modelAssignments?.coding
+          : settings.modelAssignments?.chat ?? settings.defaultModel;
+        if (preferred) setModel(preferred);
         setLongTermMemoryEnabled(settings.longTermMemoryEnabled === true);
       })
       .catch(() => {
         // Keep 26B as the balanced chat default.
       });
-  }, [lockedModel]);
+    void refreshModels();
+    window.addEventListener("focus", refreshModels);
+    const timer = window.setInterval(refreshModels, 30_000);
+    return () => {
+      window.removeEventListener("focus", refreshModels);
+      window.clearInterval(timer);
+    };
+  }, [repositoryHandoff]);
 
   useEffect(() => {
     fetch("/api/memory")
@@ -108,6 +125,19 @@ export function StudioChat({
       .then(setMemoryStatus)
       .catch(() => setMemoryStatus(null));
   }, []);
+
+  useEffect(() => {
+    if (!autoStart || autoStartTriggeredRef.current) return;
+    autoStartTriggeredRef.current = true;
+    const timer = window.setTimeout(() => composerFormRef.current?.requestSubmit(), 50);
+    return () => window.clearTimeout(timer);
+  }, [autoStart]);
+
+  useEffect(() => {
+    if (!autoStart || !pendingBuildId || isRunning || isApplyingBuild) return;
+    const frame = requestAnimationFrame(() => applyBuildButtonRef.current?.click());
+    return () => cancelAnimationFrame(frame);
+  }, [autoStart, pendingBuildId, isRunning, isApplyingBuild]);
 
   useEffect(() => {
     if (!shouldAutoFollowRef.current) return;
@@ -393,24 +423,10 @@ export function StudioChat({
       if (repositoryHandoff && composerMode === "chat") {
         setBuildProgress([]);
         setPendingBuildId("");
-        const response = await fetch("/api/github/build", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner: repositoryHandoff.owner, repo: repositoryHandoff.repo, task: userContent }) });
-        if (!response.ok || !response.body) throw new Error("The repository build could not start.");
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let pending = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          pending += decoder.decode(value, { stream: true });
-          const lines = pending.split("\n"); pending = lines.pop() ?? "";
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            const update = JSON.parse(line) as { type: "progress" | "final" | "error"; message?: string; content?: string; error?: string; buildId?: string };
-            if (update.type === "progress" && update.message) setBuildProgress((current) => [...current, update.message!]);
-            if (update.type === "error") throw new Error(update.error || "The repository build failed.");
-            if (update.type === "final") { completeAnswer = update.content ?? "Build ready."; setPendingBuildId(update.buildId ?? ""); setBuildProgress([]); setMessages([...conversationBeforeAnswer, { id: assistantId, role: "assistant", content: completeAnswer }]); }
-          }
-        }
+        const response = await fetch("/api/github/build/active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner: repositoryHandoff.owner, repo: repositoryHandoff.repo, task: userContent }) });
+        const body = (await response.json()) as { id?: string; error?: string };
+        if (!response.ok || !body.id) throw new Error(body.error || "The repository build could not start.");
+        await followActiveBuild(body.id, false, conversationBeforeAnswer, assistantId);
         return;
       }
 
@@ -527,18 +543,89 @@ export function StudioChat({
     }
   }
 
+  async function followActiveBuild(
+    jobId: string,
+    resume: boolean,
+    existingConversation?: ChatMessage[],
+    existingAssistantId?: string,
+  ) {
+    setIsRunning(true);
+    setError("");
+    let conversation = existingConversation;
+    let assistantId = existingAssistantId;
+    while (true) {
+      const response = await fetch(`/api/github/build/active?id=${encodeURIComponent(jobId)}`, { cache: "no-store" });
+      const job = (await response.json()) as {
+        task?: string;
+        status?: "running" | "complete" | "failed";
+        error?: string;
+        events?: Array<{ type: "progress" | "final" | "error"; message?: string; content?: string; error?: string; readyToPush?: boolean; buildId?: string }>;
+      };
+      if (!response.ok) throw new Error(job.error || "The active build session could not be reopened.");
+      if (resume && !conversation) {
+        conversation = [{ id: crypto.randomUUID(), role: "user", content: job.task || "Implement the repository plan." }];
+        assistantId = crypto.randomUUID();
+        setMessages([...conversation, { id: assistantId, role: "assistant", content: "" }]);
+      }
+      const events = job.events ?? [];
+      const progress = events.filter((event) => event.type === "progress" && event.message).map((event) => event.message!);
+      const finalEvent = [...events].reverse().find((event) => event.type === "final");
+      const errorEvent = [...events].reverse().find((event) => event.type === "error");
+      setBuildProgress(progress.slice(-8));
+      if (errorEvent || job.status === "failed") throw new Error(errorEvent?.error || "The secure build failed.");
+      if (finalEvent && job.status === "complete") {
+        const finalContent = finalEvent.content || "The secure build finished.";
+        setMessages([...(conversation ?? []), { id: assistantId ?? crypto.randomUUID(), role: "assistant", content: finalContent }]);
+        setBuildProgress([]);
+        if (finalEvent.readyToPush && finalEvent.buildId) setReviewedBuildId(finalEvent.buildId);
+        setIsRunning(false);
+        return;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+    }
+  }
+
+  useEffect(() => {
+    if (!activeBuildJobId || resumedBuildRef.current === activeBuildJobId) return;
+    resumedBuildRef.current = activeBuildJobId;
+    void followActiveBuild(activeBuildJobId, true).catch((failure) => {
+      setBuildProgress([]);
+      setIsRunning(false);
+      setError(failure instanceof Error ? failure.message : "The active build session could not be reopened.");
+    });
+  }, [activeBuildJobId]);
+
   async function applyPendingBuild() {
     if (!pendingBuildId || isApplyingBuild) return;
-    setIsApplyingBuild(true); setError("");
+    setIsApplyingBuild(true); setError(""); setBuildProgress([]);
     try {
       const response = await fetch("/api/github/build/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ buildId: pendingBuildId }) });
-      const body = (await response.json()) as { message?: string; error?: string; readyToPush?: boolean; buildId?: string };
-      if (!response.ok) throw new Error(body.error || "The approved build could not be applied.");
-      setMessages((current) => current.map((message, index) => index === current.length - 1 && message.role === "assistant" ? { ...message, content: `${message.content}\n\n✅ ${body.message}` } : message));
+      if (!response.ok || !response.body) throw new Error("The iterative coding run could not start.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let pending = "";
+      let finalContent = "";
+      let nextBuildId = "";
+      let readyToPush = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        pending += decoder.decode(value, { stream: true });
+        const lines = pending.split("\n"); pending = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const update = JSON.parse(line) as { type: "progress" | "final" | "error"; message?: string; content?: string; error?: string; readyToPush?: boolean; buildId?: string };
+          if (update.type === "progress" && update.message) setBuildProgress((current) => [...current.slice(-7), update.message!]);
+          if (update.type === "error") throw new Error(update.error || "The iterative coding run failed.");
+          if (update.type === "final") { finalContent = update.content ?? "The iterative build finished."; nextBuildId = update.buildId ?? ""; readyToPush = update.readyToPush === true; }
+        }
+      }
+      if (!finalContent) throw new Error("The coding agent stopped without a completion report.");
+      setMessages((current) => current.map((message, index) => index === current.length - 1 && message.role === "assistant" ? { ...message, content: `${message.content}\n\n${finalContent}` } : message));
       setPendingBuildId("");
-      if (body.readyToPush && body.buildId) setReviewedBuildId(body.buildId);
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "The approved build could not be applied."); }
-    finally { setIsApplyingBuild(false); }
+      if (readyToPush && nextBuildId) setReviewedBuildId(nextBuildId);
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "The iterative coding run failed."); }
+    finally { setBuildProgress([]); setIsApplyingBuild(false); }
   }
 
   async function pushReviewedBuild() {
@@ -783,8 +870,9 @@ export function StudioChat({
                           {message.content}
                         </MarkdownResponse>
                       </div>
+                      {isApplyingBuild && buildProgress.length ? <div className="ml-11 mt-4 space-y-2 rounded-2xl border border-sky-300/15 bg-sky-400/5 p-4 text-sm">{buildProgress.map((step, stepIndex) => <p key={`${stepIndex}-${step}`} className={stepIndex === buildProgress.length - 1 ? "animate-pulse text-sky-200" : "text-slate-500"}>{step}</p>)}</div> : null}
                       {index === messages.length - 1 && !isRunning && (
-                        <>{pendingBuildId ? <button type="button" onClick={applyPendingBuild} disabled={isApplyingBuild} className="mt-5 rounded-xl border border-sky-300/30 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-100 hover:bg-sky-400/25 disabled:opacity-50">{isApplyingBuild ? "Applying & verifying…" : "Apply locally & verify"}</button> : reviewedBuildId ? <button type="button" onClick={pushReviewedBuild} disabled={isApplyingBuild} className="mt-5 rounded-xl border border-sky-300/30 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-100 hover:bg-sky-400/25 disabled:opacity-50">{isApplyingBuild ? "Opening draft PR…" : "Push branch & open draft PR"}</button> : <ResponseActions content={message.content} currentModel={model} onRegenerate={regenerateLastResponse} />}</>
+                        <>{pendingBuildId ? <button ref={applyBuildButtonRef} type="button" onClick={applyPendingBuild} disabled={isApplyingBuild} className="mt-5 rounded-xl border border-sky-300/30 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-100 hover:bg-sky-400/25 disabled:opacity-50">{isApplyingBuild ? "Building, testing & repairing…" : "Build locally & verify"}</button> : reviewedBuildId ? <button type="button" onClick={pushReviewedBuild} disabled={isApplyingBuild} className="mt-5 rounded-xl border border-sky-300/30 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-100 hover:bg-sky-400/25 disabled:opacity-50">{isApplyingBuild ? "Opening draft PR…" : "Push branch & open draft PR"}</button> : <ResponseActions content={message.content} currentModel={model} onRegenerate={regenerateLastResponse} />}</>
                       )}
                     </>
                   ) : (
@@ -804,6 +892,7 @@ export function StudioChat({
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0a0d14] via-[#0a0d14] to-transparent px-4 pb-5 pt-14 sm:px-8">
         <form
+          ref={composerFormRef}
           onSubmit={sendMessage}
           className="pointer-events-auto mx-auto max-w-3xl rounded-[1.65rem] border border-white/10 bg-[#181c24] p-2 shadow-2xl shadow-black/35 focus-within:border-white/20"
         >
@@ -886,7 +975,7 @@ export function StudioChat({
                     setComposerMode("image");
                     setImages([]);
                   }}
-                  disabled={Boolean(lockedModel) || isRunning || isRecording || isTranscribing}
+                  disabled={Boolean(repositoryHandoff) || isRunning || isRecording || isTranscribing}
                   className={`rounded-full px-3 py-1.5 text-xs transition ${
                     composerMode === "image"
                       ? "border border-sky-400/25 bg-sky-400/15 text-sky-200 shadow-[inset_0_1px_0_rgba(125,211,252,0.12)] backdrop-blur-md"
@@ -950,10 +1039,10 @@ export function StudioChat({
                 <select
                   value={model}
                   onChange={(event) => setModel(event.target.value)}
-                  disabled={Boolean(lockedModel) || isRunning || isRecording || isTranscribing}
+                  disabled={Boolean(repositoryHandoff) || isRunning || isRecording || isTranscribing}
                   className="appearance-none rounded-full border border-sky-400/25 bg-sky-400/10 py-2 pl-3 pr-7 text-xs font-medium text-sky-200 outline-none transition hover:bg-sky-400/15 disabled:opacity-50"
                 >
-                  {(lockedModel ? modelOptions.filter((option) => option.value === lockedModel) : modelOptions).map((option) => (
+                  {(repositoryHandoff ? modelOptions.filter((option) => option.value === model) : modelOptions).map((option) => (
                     <option
                       key={option.value}
                       value={option.value}
@@ -994,11 +1083,15 @@ export function StudioChat({
             ? "Temporary chat · Kai Memory stays active · nothing is saved to History."
             : composerMode === "image"
             ? "Z-Image Turbo creates images locally on this Mac."
-            : lockedModel
-              ? repositoryHandoff ? `Two-stage secure build for ${repositoryHandoff.fullName} · fixed to local 31B agents.` : "GitHub coding handoff · fixed to the local 31B model."
+            : repositoryHandoff
+              ? `Secure build for ${repositoryHandoff.fullName} · independent security review, configured coding model, and human approval.`
               : `${selectedModel.label} runs locally. Check important information.`}
         </p>
       </div>
     </section>
   );
+}
+
+function modelLabel(model: string) {
+  return model.replace(/^hf:/, "").replace(/[-_:]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }

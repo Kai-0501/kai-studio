@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { FollowUpChat } from "@/components/follow-up-chat";
 import { MarkdownResponse } from "@/components/markdown-response";
+import { useInstalledModels } from "@/lib/use-installed-models";
 
 type EditorialForm = {
   title: string;
@@ -23,8 +24,6 @@ const initialForm: EditorialForm = {
   editLevel: "Balanced edit",
   draft: "",
 };
-
-const editorialModel = "gemma4:12b-mlx";
 
 function compileEditorialPrompt(values: EditorialForm) {
   return `# ROLE
@@ -112,6 +111,7 @@ async function copyText(text: string) {
 }
 
 export function EditorialIntelligenceRunner() {
+  const { assignedModel: editorialModel } = useInstalledModels("editorial", "gemma4:12b-mlx");
   const [values, setValues] = useState<EditorialForm>(initialForm);
   const [sourceMode, setSourceMode] = useState<"text" | "pdf">("text");
   const [editingGoalChoice, setEditingGoalChoice] = useState("");
