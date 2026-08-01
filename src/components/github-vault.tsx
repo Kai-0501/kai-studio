@@ -65,7 +65,7 @@ export function GitHubVault() {
             ))}
           </div>
         )}
-        {status?.syncedAt && <p className="mt-5 text-xs text-slate-600">Signed in as {status.login} · last synced {new Date(status.syncedAt).toLocaleString()} · forks excluded</p>}
+        {status?.syncedAt && <p className="mt-5 text-xs text-slate-600">Signed in as {status.login} · last synced {new Date(status.syncedAt).toLocaleString()} · automatically refreshes daily at 6:30 AM · forks excluded</p>}
       </div>
     </section>
   );

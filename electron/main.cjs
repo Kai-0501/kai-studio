@@ -7,6 +7,7 @@ const path = require("node:path");
 const PORT = 31415;
 let serverProcess;
 let mainWindow;
+let githubSyncTimer;
 
 // Expose the full renderer accessibility tree so macOS app-intelligence tools
 // can inspect and capture Kai Studio just like a native browser window.
@@ -75,6 +76,37 @@ function waitForServer(timeoutMs = 30_000) {
   });
 }
 
+function syncGitHubRepositories() {
+  return new Promise((resolve) => {
+    const request = http.request(
+      `http://127.0.0.1:${PORT}/api/github/sync`,
+      { method: "POST" },
+      (response) => {
+        response.resume();
+        response.on("end", () => resolve(response.statusCode));
+      },
+    );
+    request.on("error", (error) => {
+      console.error("Automatic GitHub sync failed:", error);
+      resolve(null);
+    });
+    request.end();
+  });
+}
+
+function scheduleDailyGitHubSync() {
+  const now = new Date();
+  const nextRun = new Date(now);
+  nextRun.setHours(6, 30, 0, 0);
+  if (nextRun <= now) nextRun.setDate(nextRun.getDate() + 1);
+
+  clearTimeout(githubSyncTimer);
+  githubSyncTimer = setTimeout(async () => {
+    await syncGitHubRepositories();
+    scheduleDailyGitHubSync();
+  }, nextRun.getTime() - now.getTime());
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -123,6 +155,7 @@ app.whenReady().then(async () => {
 
   try {
     await waitForServer();
+    scheduleDailyGitHubSync();
     createWindow();
   } catch (error) {
     dialog.showErrorBox("Kai Studio could not start", error.message);
@@ -136,6 +169,7 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   app.isQuitting = true;
+  clearTimeout(githubSyncTimer);
   serverProcess?.kill();
 });
 
