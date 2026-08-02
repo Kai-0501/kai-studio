@@ -14,7 +14,7 @@ import { DashboardBackLink } from "@/components/dashboard-back-link";
 export default function SettingsPage() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [defaultModel, setDefaultModel] = useState("gemma4:12b-mlx");
-  const [modelAssignments, setModelAssignments] = useState<ModelAssignments>({ chat: "gemma4:26b-mlx", meeting: "gemma4:12b-mlx", editorial: "gemma4:12b-mlx", account: "gemma4:26b-mlx", general: "gemma4:26b-mlx", coding: "qwen3.6:27b-mtp-q4_K_M", security: "gemma4:31b-mlx", vision: "glm-ocr", diagnostics: "gemma4:31b-mlx" });
+  const [modelAssignments, setModelAssignments] = useState<ModelAssignments>({ chat: "gemma4:26b-mlx", meeting: "gemma4:12b-mlx", editorial: "gemma4:12b-mlx", account: "gemma4:26b-mlx", general: "gemma4:26b-mlx", coding: "qwen3.6:27b-mtp-q4_K_M", security: "gemma4:31b-mlx", vision: "glm-ocr", diagnostics: "gemma4:31b-mlx", diagnosticsParser: "gemma4:12b-mlx", orchestration: "gemini-2.5-pro", review: "gemma4:31b-mlx" });
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(true);
   const [memoryDebugEnabled, setMemoryDebugEnabled] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -365,7 +365,7 @@ export default function SettingsPage() {
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               {(Object.keys(modelAssignments) as Array<keyof ModelAssignments>).map((key) => (
                 <label key={key} className="rounded-xl border border-white/10 bg-[#0b0f18] p-4">
-                  <span className="block text-sm font-medium capitalize">{key === "general" ? "General Intelligence" : key === "account" ? "Account Intelligence" : key === "editorial" ? "Editorial Intelligence" : key === "meeting" ? "Meeting Intelligence" : key}</span>
+                  <span className="block text-sm font-medium capitalize">{key === "general" ? "General Intelligence" : key === "account" ? "Account Intelligence" : key === "editorial" ? "Editorial Intelligence" : key === "meeting" ? "Meeting Intelligence" : key === "diagnosticsParser" ? "Diagnostics parser" : key === "orchestration" ? "Orchestration" : key === "review" ? "Review" : key}</span>
                   <select
                     value={modelAssignments[key]}
                     onChange={(event) => { setModelAssignments((current) => ({ ...current, [key]: event.target.value })); setMessage(""); }}
@@ -373,6 +373,7 @@ export default function SettingsPage() {
                   >
                     {[...(status?.models ?? []), ...(status?.huggingFaceModels ?? [])].map((model) => <option key={`${key}-${model.name}`} value={model.name}>{displayName(model.name)}</option>)}
                   </select>
+                  {!([...((status?.models ?? [])), ...((status?.huggingFaceModels ?? []))].some((model) => model.name === modelAssignments[key])) ? <span className="mt-2 block text-xs text-amber-300">Assigned model is unavailable. Save is blocked until it is installed or changed.</span> : null}
                 </label>
               ))}
             </div>

@@ -20,7 +20,9 @@ export type ModelRole =
   | "orchestrator.cloud"
   | "chat.default"
   | "vision.extractor"
-  | "diagnostics.primary";
+  | "diagnostics.primary"
+  | "diagnostics.parser"
+  | "review.primary";
 
 export type CanonicalImage = { type: "image"; data: string; mimeType?: string };
 export type CanonicalText = { type: "text"; text: string };

@@ -7,11 +7,14 @@ import { parseModelJson } from "@/lib/model-json";
 import { generateForRole } from "@/lib/models/runtime";
 import type { CanonicalMessage } from "@/lib/models/types";
 import { CodingWorkingMemory } from "@/lib/coding-working-memory";
+import { createCodingLoop, getCodingLoop, recordCodingAction, waitForExtension } from "@/lib/coding-loop-control";
+import { countsAsImplementationStep, ProgressTracker, thresholdNotice } from "@/lib/coding-loop-policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const MAX_ITERATIONS = 20;
 const MAX_WRITES = 80;
+const MAX_WALL_CLOCK_MS = 45 * 60 * 1000;
+const MAX_RSS_BYTES = Number(process.env.KAI_CODING_RSS_LIMIT ?? 4 * 1024 ** 3);
 
 type AgentMessage = CanonicalMessage;
 type CompletionReview = { decision: "approve" | "reject" | "escalate"; riskLevel: "low" | "medium" | "high" | "critical"; violations: string[]; approvedPaths: string[]; approvedCommandCategories: string[]; requiredHumanReview: boolean; rationale: string; missing: string[] };
@@ -49,7 +52,7 @@ function newFailures(before: CheckResult[], after: CheckResult[]) {
 }
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json()) as { buildId?: unknown };
+  const body = (await request.json()) as { buildId?: unknown; jobId?: unknown };
   if (typeof body.buildId !== "string") return Response.json({ error: "Build approval is required." }, { status: 400 });
 
   const encoder = new TextEncoder();
@@ -87,12 +90,18 @@ export async function POST(request: NextRequest) {
           },
         ];
         const workingMemory = await CodingWorkingMemory.create(baseMessages, build.id);
+        await createCodingLoop(build.id, typeof body.jobId === "string" ? body.jobId : undefined, build.files.length);
+        const progressTracker = new ProgressTracker();
+        const warned = new Set<number>();
+        const startedAt = Date.now();
 
         let writes = build.files.length;
         let latestChecks: CheckResult[] = [];
         let completionSummary = "";
 
-        for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration += 1) {
+        for (;;) {
+          if (Date.now() - startedAt > MAX_WALL_CLOCK_MS) throw new Error("The coding run exceeded its configured wall-clock limit.");
+          if (process.memoryUsage().rss > MAX_RSS_BYTES) throw new Error("The coding run exceeded its configured memory limit.");
           const action = await askAction(workingMemory.context());
           if (!action.status?.trim() || !action.tool) throw new Error("The coding agent returned an invalid tool request.");
           emit({ type: "progress", message: action.status.trim() });
@@ -136,8 +145,43 @@ export async function POST(request: NextRequest) {
           }
           if (outcome.checks) latestChecks = outcome.checks;
           await workingMemory.record(action, outcome.result, outcome.checks, outcome.image);
-
-          if (iteration === MAX_ITERATIONS) throw new Error(`The coding agent reached its ${MAX_ITERATIONS}-step safety limit before completing verification.`);
+          await recordCodingAction(build.id, countsAsImplementationStep(action.tool));
+          if (countsAsImplementationStep(action.tool)) {
+            const fingerprint = outcome.result.slice(0, 4_000);
+            const actionShape = Object.fromEntries(Object.entries(action).filter(([key]) => key !== "status"));
+            progressTracker.observe({
+              signature: `${action.tool}:${JSON.stringify(actionShape)}`,
+              resultFingerprint: fingerprint,
+              changedRepository: action.tool === "write_file",
+            });
+            const stopReason = progressTracker.shouldStop();
+            if (stopReason) throw new Error(`The coding agent stopped for non-progress safety: ${stopReason}`);
+          }
+          const current = getCodingLoop(build.id);
+          if (!current) throw new Error("The coding loop state could not be recovered.");
+          if (current.implementationStepCount >= 40) {
+            for (const threshold of thresholdNotice(current.implementationStepCount, warned)) {
+              warned.add(threshold);
+              if (threshold === 40) {
+                await workingMemory.note("At 40 counted implementation steps, review progress, remaining requirements, blockers, and the current hypothesis before continuing.");
+                await workingMemory.checkpoint();
+                emit({ type: "progress", message: "I’ve reached 40 implementation steps. I’m reviewing progress and remaining requirements before continuing." });
+              } else if (threshold === 80) {
+                await workingMemory.note("At 80 counted implementation steps, warm memory checkpoint persisted.");
+                await workingMemory.checkpoint();
+                emit({ type: "progress", message: "This coding task has reached 80 implementation steps and is still running. I’ve checkpointed its warm memory." });
+              }
+            }
+          }
+          if (current.implementationStepCount >= current.stepLimit) {
+            emit({ type: "progress", message: `I’ve reached ${current.implementationStepCount} counted implementation steps. The job is paused safely; choose another 50 steps or stop and preserve the current work.` });
+            const decision = await waitForExtension(build.id);
+            if (decision === "stop") {
+              emit({ type: "final", paused: true, buildId: build.id, content: "The coding job was paused for review. Current checkout, memory, logs, and progress were preserved; no review commit was created." });
+              return;
+            }
+            emit({ type: "progress", message: "The coding loop was extended by exactly 50 implementation steps. Resuming from the preserved checkout and memory." });
+          }
         }
 
         if (!completionSummary) throw new Error("The coding agent did not reach a verified completion state.");

@@ -24,7 +24,7 @@ export async function resolveRole(role: ModelRole, signal?: AbortSignal) {
   const route = roleRoutes[role];
   if (!route) throw new ModelRuntimeError(`No route is configured for ${role}.`, "configuration");
   const settings = await readSettings();
-  const assignmentKey = role === "coder.primary" ? "coding" : role.startsWith("security.") ? "security" : role === "editorial.primary" ? "editorial" : role === "vision.extractor" ? "vision" : role === "diagnostics.primary" ? "diagnostics" : role === "chat.default" ? "chat" : undefined;
+  const assignmentKey = role === "coder.primary" ? "coding" : role.startsWith("security.") ? "security" : role === "editorial.primary" ? "editorial" : role === "vision.extractor" ? "vision" : role === "diagnostics.primary" ? "diagnostics" : role === "diagnostics.parser" ? "diagnosticsParser" : role === "orchestrator.cloud" ? "orchestration" : role === "review.primary" ? "review" : role === "chat.default" ? "chat" : undefined;
   const assignedProviderModel = assignmentKey ? settings.modelAssignments[assignmentKey] : undefined;
   const template = modelRegistry.get(route.primary);
   if (assignedProviderModel && template) {
@@ -32,7 +32,7 @@ export async function resolveRole(role: ModelRole, signal?: AbortSignal) {
       ...template,
       id: `assigned.${assignmentKey}.${assignedProviderModel}`,
       displayName: assignedProviderModel,
-      provider: assignedProviderModel.startsWith("hf:") ? "openai-compatible" : "ollama",
+      provider: assignedProviderModel.startsWith("hf:") ? "openai-compatible" : assignedProviderModel.startsWith("gemini") ? "gemini" : "ollama",
       providerModel: assignedProviderModel,
       capabilities: [...new Set([...template.capabilities, ...route.requiredCapabilities])],
       supportsTools: template.supportsTools || route.requiredCapabilities.includes("tools"),

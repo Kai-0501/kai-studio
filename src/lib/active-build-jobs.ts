@@ -5,6 +5,12 @@ export type ActiveBuildEvent = {
   error?: string;
   readyToPush?: boolean;
   buildId?: string;
+  paused?: boolean;
+  implementationStepCount?: number;
+  inspectionCount?: number;
+  stepLimit?: number;
+  extensionCount?: number;
+  awaitingExtension?: boolean;
 };
 
 export type ActiveBuildJob = {
@@ -17,6 +23,12 @@ export type ActiveBuildJob = {
   events: ActiveBuildEvent[];
   createdAt: string;
   updatedAt: string;
+  pendingBuildId?: string;
+  implementationStepCount?: number;
+  inspectionCount?: number;
+  stepLimit?: number;
+  extensionCount?: number;
+  awaitingExtension?: boolean;
 };
 
 const globalJobs = globalThis as typeof globalThis & {

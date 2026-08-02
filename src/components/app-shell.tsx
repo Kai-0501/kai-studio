@@ -8,6 +8,7 @@ const navigation = [
   { label: "Dashboard", icon: "⌂", href: "/" },
   { label: "Chat", icon: "✦", href: "/chat" },
   { label: "GitHub", icon: "⌘", href: "/github" },
+  { label: "New app", icon: "+", href: "/greenfield" },
   { label: "Library", icon: "▦", href: "/library" },
   {
     label: "Runner",

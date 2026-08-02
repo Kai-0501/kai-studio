@@ -18,6 +18,8 @@ const defaultRoutes: Record<ModelRole, RoleRoute> = {
   "chat.default": { primary: "local.gemma4-26b-chat", fallbacks: ["local.gemma4-31b-security", "local.gemma4-12b-editor"], requiredCapabilities: ["chat"], localOnly: true },
   "vision.extractor": { primary: "local.glm-ocr", requiredCapabilities: ["vision"], localOnly: true },
   "diagnostics.primary": { primary: "local.gemma4-31b-security", requiredCapabilities: ["chat", "reasoning"], localOnly: true },
+  "diagnostics.parser": { primary: "local.gemma4-12b-editor", requiredCapabilities: ["chat", "structured-output"], localOnly: true },
+  "review.primary": { primary: "local.gemma4-31b-security", requiredCapabilities: ["repository-review", "structured-output"], localOnly: true },
 };
 
 function configuredModels() {

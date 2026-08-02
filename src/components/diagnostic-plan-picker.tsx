@@ -46,6 +46,9 @@ export function DiagnosticPlanPicker({ run }: { run: SavedRun }) {
     });
   }
 
+  function selectAll() { setSelected(new Set(recommendations.map((item) => item.id))); }
+  function clearAll() { setSelected(new Set()); }
+
   async function sendSelected() {
     if ((!selected.size && !customRequest.trim()) || sending) return;
     setSending(true);
@@ -84,6 +87,10 @@ export function DiagnosticPlanPicker({ run }: { run: SavedRun }) {
 
             {loading ? <p className="mt-8 animate-pulse text-slate-400">Organising recommendations…</p> : (
               <div className="mt-7 space-y-7">
+                <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/40 px-4 py-3 text-sm">
+                  <span className="text-slate-400">{selected.size} of {recommendations.length} recommendations selected</span>
+                  <span className="flex gap-2"><button type="button" onClick={selectAll} className="text-sky-300 hover:text-sky-200">Select all</button><button type="button" onClick={clearAll} className="text-slate-400 hover:text-slate-200">Clear all</button></span>
+                </div>
                 {groups.map((group) => {
                   const items = recommendations.filter((item) => item.priority === group.priority);
                   if (!items.length) return null;
@@ -93,7 +100,7 @@ export function DiagnosticPlanPicker({ run }: { run: SavedRun }) {
                       {items.map((item) => (
                         <label key={item.id} className="flex cursor-pointer gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 p-4 hover:border-sky-400/40">
                           <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} className="mt-1 h-4 w-4 accent-sky-400" />
-                          <span><span className="block font-medium text-slate-100">{item.title}</span><span className="mt-1 block text-sm leading-6 text-slate-400">{item.summary}</span></span>
+                          <span><span className="block font-medium text-slate-100">{item.title}</span><span className="mt-1 block text-sm leading-6 text-slate-400">{item.description || item.summary}</span><span className="mt-2 block text-xs text-slate-500">{item.category || "Uncategorized"} · {item.confidence || "unknown"} confidence{item.runtimeVerificationRequired ? " · runtime verification required" : ""}</span>{item.evidence ? <span className="mt-2 block border-l border-sky-400/30 pl-3 text-xs leading-5 text-slate-500">Evidence: {item.evidence}</span> : null}</span>
                         </label>
                       ))}
                     </div>
@@ -105,7 +112,7 @@ export function DiagnosticPlanPicker({ run }: { run: SavedRun }) {
                 </section>
               </div>
             )}
-            {error && <p className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+            {error && <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"><p>{error}</p><button type="button" onClick={showPicker} className="mt-2 text-red-200 underline">Retry parsing</button></div>}
             <div className="mt-7 flex justify-end">
               <button type="button" onClick={sendSelected} disabled={loading || sending || (!selected.size && !customRequest.trim())} className="rounded-xl bg-sky-400 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40">
                 {sending ? "Preparing selected plan…" : "Send selected to coding agent"}

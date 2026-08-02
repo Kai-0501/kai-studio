@@ -10,6 +10,7 @@ type WorkingEvent = {
   result?: string;
   checks?: CheckResult[];
   feedback?: string;
+  note?: string;
 };
 
 /**
@@ -57,6 +58,16 @@ export class CodingWorkingMemory {
     if (this.blockers.length > 5) this.blockers.shift();
     this.hot.push({ role: "assistant", content: JSON.stringify(action) }, { role: "user", content: feedback });
     this.trimHot();
+  }
+
+  async note(note: string) {
+    await appendFile(this.logFile, `${JSON.stringify({ at: new Date().toISOString(), note } satisfies WorkingEvent)}\n`, "utf8");
+    this.hot.push({ role: "system", content: `RUNTIME NOTE: ${note}` });
+    this.trimHot();
+  }
+
+  async checkpoint() {
+    await appendFile(this.logFile, `${JSON.stringify({ at: new Date().toISOString(), note: "Warm memory checkpoint persisted." } satisfies WorkingEvent)}\n`, "utf8");
   }
 
   context(): CanonicalMessage[] {

@@ -5,6 +5,7 @@ import {
   type ActiveBuildEvent,
   type ActiveBuildJob,
 } from "@/lib/active-build-jobs";
+import { decideCodingLoop, getCodingLoop } from "@/lib/coding-loop-control";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,17 @@ function addEvent(job: ActiveBuildJob, event: ActiveBuildEvent) {
   job.updatedAt = new Date().toISOString();
 }
 
+function syncLoop(job: ActiveBuildJob) {
+  if (!job.pendingBuildId) return;
+  const loop = getCodingLoop(job.pendingBuildId);
+  if (!loop) return;
+  job.implementationStepCount = loop.implementationStepCount;
+  job.inspectionCount = loop.inspectionCount;
+  job.stepLimit = loop.stepLimit;
+  job.extensionCount = loop.extensionCount;
+  job.awaitingExtension = loop.awaitingExtension;
+}
+
 async function runJob(job: ActiveBuildJob, origin: string) {
   try {
     let pendingBuildId = "";
@@ -50,16 +62,20 @@ async function runJob(job: ActiveBuildJob, origin: string) {
       },
     );
     if (!pendingBuildId) throw new Error("The build preparation stopped without an approved build.");
+    job.pendingBuildId = pendingBuildId;
+    syncLoop(job);
     addEvent(job, { type: "progress", message: job.diagnosticRunId ? "Qwen is starting the selected diagnostics implementation now." : "The security preflight passed. Qwen is starting the bounded implementation now." });
     await consumeEvents(
       await fetch(`${origin}/api/github/build/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ buildId: pendingBuildId }),
+        body: JSON.stringify({ buildId: pendingBuildId, jobId: job.id }),
       }),
       (event) => {
         if (event.type === "error") throw new Error(event.error || "The coding run failed.");
+        if (event.buildId) job.pendingBuildId = event.buildId;
         addEvent(job, event);
+        syncLoop(job);
       },
     );
     if (!job.events.some((event) => event.type === "final")) {
@@ -78,7 +94,15 @@ async function runJob(job: ActiveBuildJob, origin: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json()) as { owner?: unknown; repo?: unknown; task?: unknown; diagnosticRunId?: unknown };
+  const body = (await request.json()) as { id?: unknown; decision?: unknown; owner?: unknown; repo?: unknown; task?: unknown; diagnosticRunId?: unknown };
+  if (typeof body.id === "string" && (body.decision === "extend" || body.decision === "stop")) {
+    const job = activeBuildJobs.get(body.id);
+    if (!job || !job.pendingBuildId) return Response.json({ error: "Build session not found." }, { status: 404 });
+    const state = await decideCodingLoop(job.pendingBuildId, body.decision);
+    if (!state) return Response.json({ error: "This coding session is not waiting for an extension decision." }, { status: 409 });
+    syncLoop(job);
+    return Response.json(publicActiveBuild(job));
+  }
   if (typeof body.owner !== "string" || typeof body.repo !== "string" || typeof body.task !== "string" || !body.task.trim()) {
     return Response.json({ error: "Repository and task are required." }, { status: 400 });
   }
@@ -102,10 +126,12 @@ export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
   if (id) {
     const job = activeBuildJobs.get(id);
+    if (job) syncLoop(job);
     return job ? Response.json(publicActiveBuild(job)) : Response.json({ error: "Build session not found." }, { status: 404 });
   }
   const running = [...activeBuildJobs.values()]
     .filter((job) => job.status === "running")
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  if (running) syncLoop(running);
   return Response.json({ active: running ? publicActiveBuild(running) : null });
 }

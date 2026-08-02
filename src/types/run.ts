@@ -18,6 +18,15 @@ export type DiagnosticRecommendation = {
   summary: string;
   evidence: string;
   acceptanceCriteria: string[];
+  severity?: "critical" | "high" | "medium" | "low" | "info" | "unknown";
+  severityInferred?: boolean;
+  category?: string;
+  description?: string;
+  affectedFiles?: string[];
+  recommendedAction?: string;
+  confidence?: "high" | "medium" | "low" | "unknown";
+  runtimeVerificationRequired?: boolean;
+  classification?: "reproducible bug" | "architectural brittleness" | "UX friction" | "reliability issue" | "security issue" | "future-proofing improvement" | "optional enhancement" | "unknown";
 };
 
 export type SavedRun = {

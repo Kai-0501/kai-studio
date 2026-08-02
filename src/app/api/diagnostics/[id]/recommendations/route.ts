@@ -29,7 +29,10 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  const result = await recommendationsFor(id);
+  let result;
+  try { result = await recommendationsFor(id); } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Diagnostics parsing failed.", retryable: true }, { status: 422 });
+  }
   if (!result) return Response.json({ error: "Diagnostics run not found." }, { status: 404 });
   return Response.json({ recommendations: result.recommendations, report: result.run.output });
 }
@@ -48,7 +51,10 @@ export async function POST(
     return Response.json({ error: "Select at least one recommendation or add a user request." }, { status: 400 });
   }
 
-  const result = await recommendationsFor(id);
+  let result;
+  try { result = await recommendationsFor(id); } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Diagnostics parsing failed.", retryable: true }, { status: 422 });
+  }
   if (!result) return Response.json({ error: "Diagnostics run not found." }, { status: 404 });
   const known = new Map(result.recommendations.map((item) => [item.id, item]));
   if (selectedIds.some((selectedId) => !known.has(selectedId))) {

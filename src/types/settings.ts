@@ -15,6 +15,9 @@ export type ModelAssignments = {
   security: string;
   vision: string;
   diagnostics: string;
+  diagnosticsParser: string;
+  orchestration: string;
+  review: string;
 };
 
 export type LocalModel = {

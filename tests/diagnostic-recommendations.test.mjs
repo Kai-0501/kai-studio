@@ -33,6 +33,16 @@ test("drops incomplete recommendations", () => {
   assert.deepEqual(normalizeDiagnosticRecommendations([{ title: "No criteria", summary: "Incomplete" }]), []);
 });
 
+test("preserves structured parser metadata and deduplicates repeated findings", () => {
+  const result = normalizeDiagnosticRecommendations([
+    { id: "same", priority: "high", severity: "high", category: "reliability", title: "Slow startup", description: "Startup is slow", evidence: "Repeated timeout", recommendedAction: "Profile startup", confidence: "high", runtimeVerificationRequired: true, classification: "reliability issue", acceptanceCriteria: ["Startup improves"] },
+    { id: "same-copy", priority: "high", severity: "high", category: "reliability", title: "Slow startup", description: "Startup is slow", evidence: "Repeated timeout", recommendedAction: "Profile startup", confidence: "high", runtimeVerificationRequired: true, classification: "reliability issue", acceptanceCriteria: ["Startup improves"] },
+  ]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].runtimeVerificationRequired, true);
+  assert.equal(result[0].classification, "reliability issue");
+});
+
 test("security bypass requires the exact saved diagnostics plan", () => {
   const run = {
     id: "run-1",
