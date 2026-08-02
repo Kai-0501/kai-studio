@@ -164,11 +164,11 @@ export async function POST(request: NextRequest) {
               warned.add(threshold);
               if (threshold === 40) {
                 await workingMemory.note("At 40 counted implementation steps, review progress, remaining requirements, blockers, and the current hypothesis before continuing.");
-                await workingMemory.checkpoint();
+                await workingMemory.checkpoint({ implementationSteps: current.implementationStepCount, stepLimit: current.stepLimit, extensionCount: current.extensionCount, awaitingExtension: current.awaitingExtension });
                 emit({ type: "progress", message: "I’ve reached 40 implementation steps. I’m reviewing progress and remaining requirements before continuing." });
               } else if (threshold === 80) {
                 await workingMemory.note("At 80 counted implementation steps, warm memory checkpoint persisted.");
-                await workingMemory.checkpoint();
+                await workingMemory.checkpoint({ implementationSteps: current.implementationStepCount, stepLimit: current.stepLimit, extensionCount: current.extensionCount, awaitingExtension: current.awaitingExtension });
                 emit({ type: "progress", message: "This coding task has reached 80 implementation steps and is still running. I’ve checkpointed its warm memory." });
               }
             }

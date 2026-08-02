@@ -1,4 +1,4 @@
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { dataDirectory, type CheckResult } from "@/lib/github-build";
 import type { AgentAction } from "@/lib/coding-agent";
@@ -11,6 +11,24 @@ type WorkingEvent = {
   checks?: CheckResult[];
   feedback?: string;
   note?: string;
+};
+
+export type CodingWarmCheckpoint = {
+  version: 1;
+  objective: string;
+  approvedScope: string;
+  completedSubtasks: string[];
+  remainingSubtasks: string[];
+  filesRead: string[];
+  filesModified: string[];
+  repositoryStateId: string;
+  latestChecks: CheckResult[];
+  blockers: string[];
+  activeHypothesis: string;
+  rejectedHypotheses: string[];
+  userApprovals: string[];
+  extensionState: { implementationSteps: number; stepLimit: number; extensionCount: number; awaitingExtension: boolean };
+  nextRecommendedAction: string;
 };
 
 /**
@@ -66,8 +84,20 @@ export class CodingWorkingMemory {
     this.trimHot();
   }
 
-  async checkpoint() {
-    await appendFile(this.logFile, `${JSON.stringify({ at: new Date().toISOString(), note: "Warm memory checkpoint persisted." } satisfies WorkingEvent)}\n`, "utf8");
+  async checkpoint(extensionState?: CodingWarmCheckpoint["extensionState"]) {
+    const checkpoint = this.warmCheckpoint(extensionState);
+    await appendFile(this.logFile, `${JSON.stringify({ at: new Date().toISOString(), note: JSON.stringify(checkpoint) } satisfies WorkingEvent)}\n`, "utf8");
+  }
+
+  warmCheckpoint(extensionState: CodingWarmCheckpoint["extensionState"] = { implementationSteps: 0, stepLimit: 150, extensionCount: 0, awaitingExtension: false }): CodingWarmCheckpoint {
+    const firstUser = this.base.find((message) => message.role === "user")?.content;
+    return { version: 1, objective: typeof firstUser === "string" ? firstUser : "", approvedScope: "User-approved coding task", completedSubtasks: [...this.actions], remainingSubtasks: [], filesRead: [], filesModified: [...this.files], repositoryStateId: "runtime-state", latestChecks: [...this.latestChecks], blockers: [...this.blockers], activeHypothesis: "Inspect current evidence before changing code", rejectedHypotheses: [], userApprovals: [], extensionState, nextRecommendedAction: "Inspect the next relevant subsystem or run the next declared check" };
+  }
+
+  async retrieveColdEvents(query: string, limit = 12) {
+    const content = await readFile(this.logFile, "utf8").catch(() => "");
+    const terms = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    return content.split("\n").filter(Boolean).map((line) => ({ line, score: terms.reduce((score, term) => score + (line.toLocaleLowerCase().includes(term) ? 1 : 0), 0) })).filter((item) => item.score > 0).sort((a, b) => b.score - a.score).slice(0, limit).map((item) => JSON.parse(item.line) as WorkingEvent);
   }
 
   context(): CanonicalMessage[] {

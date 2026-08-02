@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { MemoryRecord } from "@/types/memory";
 import { memoryIndexFile } from "@/lib/memory/config";
 import { parseMarkdownMemory } from "@/lib/memory/frontmatter";
+import { localEmbeddingProvider } from "@/lib/memory/embeddings";
 
 type DatabaseRow = Record<string, unknown>;
 
@@ -19,6 +20,7 @@ export type IndexedCandidate = {
   record: MemoryRecord;
   lexicalRank: number;
   vector: Record<string, number>;
+  denseVector: number[];
 };
 
 function tokenize(text: string) {
@@ -103,6 +105,8 @@ export class SqliteMemoryIndex {
         searchable_text TEXT NOT NULL,
         metadata_json TEXT NOT NULL,
         vector_json TEXT NOT NULL,
+        dense_vector_json TEXT NOT NULL DEFAULT '[]',
+        embedding_provider TEXT,
         access_count INTEGER NOT NULL DEFAULT 0,
         last_accessed_at TEXT
       );
@@ -122,6 +126,8 @@ export class SqliteMemoryIndex {
         tokenize = 'unicode61 remove_diacritics 2'
       );
     `);
+    try { this.database.exec("ALTER TABLE memory_records ADD COLUMN dense_vector_json TEXT NOT NULL DEFAULT '[]'"); } catch { /* already migrated */ }
+    try { this.database.exec("ALTER TABLE memory_records ADD COLUMN embedding_provider TEXT"); } catch { /* already migrated */ }
   }
 
   async sync(): Promise<MemoryIndexStats> {
@@ -185,6 +191,7 @@ export class SqliteMemoryIndex {
         record: databaseRecord(row),
         lexicalRank: Number(row.lexical_rank),
         vector: JSON.parse(String(row.vector_json)) as Record<string, number>,
+        denseVector: JSON.parse(String(row.dense_vector_json ?? "[]")) as number[],
       }))
       .filter(
         ({ record }) =>
@@ -254,8 +261,8 @@ export class SqliteMemoryIndex {
         .prepare(
           `INSERT INTO memory_records (
              id, source_file, content_hash, title, domain, content,
-             searchable_text, metadata_json, vector_json
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             searchable_text, metadata_json, vector_json, dense_vector_json, embedding_provider
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              source_file = excluded.source_file,
              content_hash = excluded.content_hash,
@@ -264,7 +271,9 @@ export class SqliteMemoryIndex {
              content = excluded.content,
              searchable_text = excluded.searchable_text,
              metadata_json = excluded.metadata_json,
-             vector_json = excluded.vector_json`,
+             vector_json = excluded.vector_json,
+             dense_vector_json = excluded.dense_vector_json,
+             embedding_provider = excluded.embedding_provider`,
         )
         .run(
           record.id,
@@ -276,6 +285,8 @@ export class SqliteMemoryIndex {
           searchableText,
           JSON.stringify(metadata),
           JSON.stringify(sparseVector(searchableText)),
+          JSON.stringify(localEmbeddingProvider.enabled ? localEmbeddingProvider.embed(searchableText) : []),
+          localEmbeddingProvider.enabled ? `${localEmbeddingProvider.id}@${localEmbeddingProvider.version}` : null,
         );
       database.prepare("DELETE FROM memory_fts WHERE record_id = ?").run(record.id);
       database

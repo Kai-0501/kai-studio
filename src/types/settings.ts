@@ -18,6 +18,7 @@ export type ModelAssignments = {
   diagnosticsParser: string;
   orchestration: string;
   review: string;
+  embedding: string;
 };
 
 export type LocalModel = {

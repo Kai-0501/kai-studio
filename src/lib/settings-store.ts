@@ -22,6 +22,7 @@ const defaultSettings: KaiStudioSettings = {
     diagnosticsParser: "gemma4:12b-mlx",
     orchestration: "gemini-2.5-pro",
     review: "gemma4:31b-mlx",
+    embedding: "local-hash",
   },
   longTermMemoryEnabled: true,
   memoryDebugEnabled: false,

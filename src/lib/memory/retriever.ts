@@ -13,6 +13,7 @@ import {
   sparseVector,
   SqliteMemoryIndex,
 } from "@/lib/memory/index-store";
+import { denseCosine, localEmbeddingProvider } from "@/lib/memory/embeddings";
 
 export interface MemoryRetriever {
   retrieve(
@@ -76,10 +77,11 @@ export class HybridMemoryRetriever implements MemoryRetriever {
 
     this.lastStats = await this.index.sync();
     const queryVector = sparseVector(query);
+    const queryDense = localEmbeddingProvider.enabled ? localEmbeddingProvider.embed(query) : [];
     const normalizedQuery = normalize(query);
     const initiallyRanked = this.index
       .candidates(query, options.candidateLimit)
-      .map(({ record, lexicalRank, vector }) => {
+      .map(({ record, lexicalRank, vector, denseVector }) => {
         const matchedEntities = [...record.people, ...record.entities].filter(
           (entity) => normalizedQuery.includes(normalize(entity)),
         );
@@ -88,13 +90,15 @@ export class HybridMemoryRetriever implements MemoryRetriever {
         );
         const lexical = 1 / (1 + Math.abs(lexicalRank));
         const semantic = cosine(queryVector, vector);
+        const dense = denseCosine(queryDense, denseVector);
         const entityBoost = Math.min(0.3, matchedEntities.length * 0.16);
         const tagBoost = Math.min(0.15, matchedTags.length * 0.08);
         const freshness = recencyScore(record.updatedAt) * 0.05;
         const frequency = Math.min(0.05, Math.log1p(record.accessCount) * 0.01);
         const score =
-          lexical * 0.28 +
-          semantic * 0.38 +
+          lexical * 0.22 +
+          semantic * 0.30 +
+          dense * 0.16 +
           entityBoost +
           tagBoost +
           record.importance * 0.08 +

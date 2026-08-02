@@ -24,6 +24,11 @@ outputs, and memory stay local.
 - **Two-stage secure builds**: a bounded Gemma security review runs first,
   followed by a tool-using Qwen coding agent only after the repository passes
   review
+- **GPT-OSS Safeguard preflight** with OpenAI Harmony-compatible runtime
+  routing, fail-closed structured verdicts, and Gemma fallback
+- **Kai Agent** for direct user-to-plan-to-approved-coding handoffs
+- **Greenfield Workspace** with bounded templates and filesystem protections
+- **KaiLore Phase 2A** with pluggable local dense embeddings and sparse fallback
 - **Persistent background build sessions** that survive navigation and keep
   running while Kai Studio is in the background
 - **Configurable model assignments** for chat, workflows, coding, security,
@@ -76,6 +81,12 @@ For secure repository automation and bounded coding context, see
 
 For model discovery and role routing, see
 [docs/model-runtime.md](docs/model-runtime.md).
+
+For the GPT-OSS Safeguard policy and official Harmony references, see
+[docs/security/gpt-oss-safeguard-policy.md](docs/security/gpt-oss-safeguard-policy.md).
+
+For Phase 2A memory and bounded coding-memory design, see
+[docs/memory-phase-2a.md](docs/memory-phase-2a.md).
 
 ## Technology
 

@@ -10,11 +10,7 @@ const navigation = [
   { label: "GitHub", icon: "⌘", href: "/github" },
   { label: "New app", icon: "+", href: "/greenfield" },
   { label: "Library", icon: "▦", href: "/library" },
-  {
-    label: "Runner",
-    icon: "▶",
-    href: "/workflows/general-intelligence",
-  },
+  { label: "Kai Agent", icon: "✦", href: "/kai-agent" },
   { label: "History", icon: "↺", href: "/history" },
   { label: "Settings", icon: "⚙", href: "/settings" },
 ];
@@ -52,7 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             const href = item.label === "Chat" && activeBuildHref ? activeBuildHref : item.href;
             const active =
               pathname === item.href ||
-              (item.label === "Runner" && pathname.startsWith("/workflows/")) ||
+              (item.label === "Kai Agent" && (pathname.startsWith("/workflows/") || pathname.startsWith("/kai-agent"))) ||
               (item.label === "History" && pathname.startsWith("/history/"));
             const isActive = active || (item.label === "GitHub" && pathname.startsWith("/github/"));
 

@@ -8,8 +8,9 @@ test("secure coding roles route to separate configured models", () => {
   const preflight = modelRegistry.get(roleRoutes["security.preflight"].primary);
   const postflight = modelRegistry.get(roleRoutes["security.postflight"].primary);
   assert.equal(coder?.providerModel, "qwen3.6:27b-mtp-q4_K_M");
-  assert.equal(preflight?.providerModel, "gemma4:31b-mlx");
-  assert.equal(postflight?.id, preflight?.id);
+  assert.equal(preflight?.providerModel, "gpt-oss-safeguard:20b");
+  assert.equal(postflight?.providerModel, "gemma4:31b-mlx");
+  assert.notEqual(postflight?.id, preflight?.id);
   assert.notEqual(coder?.id, preflight?.id);
 });
 

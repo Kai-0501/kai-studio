@@ -10,7 +10,8 @@ export type ModelCapability =
   | "structured-output"
   | "tools"
   | "vision"
-  | "reasoning";
+  | "reasoning"
+  | "embedding";
 
 export type ModelRole =
   | "coder.primary"
@@ -22,7 +23,9 @@ export type ModelRole =
   | "vision.extractor"
   | "diagnostics.primary"
   | "diagnostics.parser"
-  | "review.primary";
+  | "review.primary"
+  | "memory.embedding";
+
 
 export type CanonicalImage = { type: "image"; data: string; mimeType?: string };
 export type CanonicalText = { type: "text"; text: string };

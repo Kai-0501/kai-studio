@@ -14,7 +14,7 @@ import { DashboardBackLink } from "@/components/dashboard-back-link";
 export default function SettingsPage() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [defaultModel, setDefaultModel] = useState("gemma4:12b-mlx");
-  const [modelAssignments, setModelAssignments] = useState<ModelAssignments>({ chat: "gemma4:26b-mlx", meeting: "gemma4:12b-mlx", editorial: "gemma4:12b-mlx", account: "gemma4:26b-mlx", general: "gemma4:26b-mlx", coding: "qwen3.6:27b-mtp-q4_K_M", security: "gemma4:31b-mlx", vision: "glm-ocr", diagnostics: "gemma4:31b-mlx", diagnosticsParser: "gemma4:12b-mlx", orchestration: "gemini-2.5-pro", review: "gemma4:31b-mlx" });
+  const [modelAssignments, setModelAssignments] = useState<ModelAssignments>({ chat: "gemma4:26b-mlx", meeting: "gemma4:12b-mlx", editorial: "gemma4:12b-mlx", account: "gemma4:26b-mlx", general: "gemma4:26b-mlx", coding: "qwen3.6:27b-mtp-q4_K_M", security: "gpt-oss-safeguard:20b", vision: "glm-ocr", diagnostics: "gemma4:31b-mlx", diagnosticsParser: "gemma4:12b-mlx", orchestration: "gemini-2.5-pro", review: "gemma4:31b-mlx", embedding: "local-hash" });
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(true);
   const [memoryDebugEnabled, setMemoryDebugEnabled] = useState(false);
   const [checking, setChecking] = useState(true);
