@@ -452,7 +452,7 @@ export function compactSeedSchema(count = expectedIdeaCount()) {
   return { type: "object", additionalProperties: false, required: ["ideas"], properties: { ideas: { type: "array", minItems: count, maxItems: count, items: { type: "object", additionalProperties: false, required: ["application_name", "repository_slug", "product_definition", "problem", "target_user", "smallest_experiment"], properties: { application_name: { type: "string" }, repository_slug: { type: "string" }, product_definition: { type: "string" }, problem: { type: "string" }, target_user: { type: "string" }, smallest_experiment: { type: "string" } } } } } };
 }
 
-function compactSeedTransportSchema(count) {
+function compactSeedTransportSchema() {
   return {
     type: "object",
     properties: {
