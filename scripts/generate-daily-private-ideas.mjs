@@ -68,7 +68,11 @@ export function providerRequest(prompt, schema, targetProvider = provider) {
         body: JSON.stringify({
           system_instruction: { parts: [{ text: systemInstruction() }] },
           contents: [{ role: "user", parts: [{ text: contract }] }],
-          generationConfig: { maxOutputTokens: 32768, responseMimeType: "application/json", responseJsonSchema: responseSchema },
+          // Gemini's public endpoint has a narrower response-schema subset than
+          // the provider-neutral contract. JSON mode plus the embedded contract
+          // keeps output machine-readable; the authoritative schema and semantic
+          // validation run locally before anything can be created.
+          generationConfig: { maxOutputTokens: 32768, responseMimeType: "application/json" },
         }),
       },
     };

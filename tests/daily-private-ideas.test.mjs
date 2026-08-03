@@ -74,6 +74,7 @@ test("Gemini receives a compatible response-schema projection while local schema
   assert.equal(gemini.properties.nested.additionalProperties, undefined);
 });
 
+
 test("candidate filtering happens before expansion and keeps distinct greenfield work", () => {
   const candidates = [
     { application_name: "Private training timer", repository_slug: "private-training-timer", product_definition: detail("A recurring local training timer that captures interval evidence and checks a personal progression plan"), problem: detail("Athletes repeatedly lose interval history and cannot compare their planned and completed recovery periods"), target_user: detail("A solo lifter who trains several times weekly"), smallest_experiment: detail("A local command-line timer with two interval templates") },
