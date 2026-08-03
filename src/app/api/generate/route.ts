@@ -10,7 +10,7 @@ import {
 } from "@/lib/memory/prompt";
 import {
   latestRetrievalReport,
-  longTermMemoryRetriever,
+  kaiLoreMemoryRetriever,
   rememberRetrievalReport,
 } from "@/lib/memory/runtime";
 import {
@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
       const retrievalQuery = compactRetrievalQuery(
         rawMessages.map(({ role, content }) => ({ role, content })),
       );
-      const report = await longTermMemoryRetriever.retrieve(retrievalQuery);
+      const report = await (await kaiLoreMemoryRetriever()).retrieve(retrievalQuery);
       const latestUserMessage =
         [...rawMessages].reverse().find(({ role }) => role === "user")?.content ??
         "";

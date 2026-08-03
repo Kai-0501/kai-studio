@@ -25,7 +25,8 @@ export type ModelRole =
   | "diagnostics.parser"
   | "progress.assessor"
   | "review.primary"
-  | "memory.embedding";
+  | "kailore.embedding"
+  | "coding.embedding";
 
 
 export type CanonicalImage = { type: "image"; data: string; mimeType?: string };

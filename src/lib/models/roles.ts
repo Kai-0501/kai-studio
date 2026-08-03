@@ -25,7 +25,8 @@ export const modelRoleDescriptions: readonly ModelRoleDescription[] = [
   { key: "progressAssessor", label: "Progress assessor", description: "Assesses ambiguous coding progress using observable evidence and preserves uncertainty.", capabilities: ["structured output"] },
   { key: "orchestration", label: "Orchestration", description: "Creates bounded implementation plans and handoffs for approved work.", capabilities: ["reasoning", "structured output"] },
   { key: "review", label: "Review", description: "Performs a final local review of completed work and verification evidence.", capabilities: ["repository review", "structured output"] },
-  { key: "embedding", label: "Embedding", description: "Indexes local memory for retrieval; it is not a chat model.", capabilities: ["embedding"] },
+  { key: "kaiLoreEmbedding", label: "KaiLore Embedding", description: "Indexes KaiLore personal memory for private conversational retrieval; it is not used by coding agents.", capabilities: ["embedding"] },
+  { key: "codingEmbedding", label: "Coding Embedding", description: "Indexes approved repository evidence for hybrid coding retrieval; it never reads KaiLore.", capabilities: ["embedding"] },
   { key: "future", label: "Future roles", description: "New Kai Studio capabilities inherit this registry pattern instead of embedding a model name in a component.", capabilities: [] },
 ] as const;
 
@@ -45,7 +46,8 @@ export const defaultModelAssignments: ModelAssignments = {
   progressAssessor: "gemma4:12b-mlx",
   orchestration: "gemini-2.5-pro",
   review: "gemma4:31b-mlx",
-  embedding: "local-hash",
+  kaiLoreEmbedding: "local-hash",
+  codingEmbedding: "local-hash",
 };
 
 export function modelRoleDescription(key: keyof ModelAssignments) {

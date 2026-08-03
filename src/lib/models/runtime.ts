@@ -28,7 +28,8 @@ const assignmentKeyByRole: Partial<Record<ModelRole, keyof ModelAssignments>> = 
   "progress.assessor": "progressAssessor",
   "orchestrator.cloud": "orchestration",
   "review.primary": "review",
-  "memory.embedding": "embedding",
+  "kailore.embedding": "kaiLoreEmbedding",
+  "coding.embedding": "codingEmbedding",
   "chat.default": "chat",
 };
 
@@ -44,6 +45,16 @@ export async function resolveRole(role: ModelRole, signal?: AbortSignal) {
   const assignedProviderModel = assignmentKey ? settings.modelAssignments[assignmentKey] : undefined;
   const template = modelRegistry.get(route.primary);
   if (assignedProviderModel && template) {
+    const isEmbeddingRole = role === "kailore.embedding" || role === "coding.embedding";
+    // Embedding is intentionally capability-specific. A generative model may be
+    // selected in Settings for a future adapter, but it must not be treated as
+    // an embedding runtime until that adapter explicitly declares support.
+    if (isEmbeddingRole && !["local-hash", "local.memory-hash-embedding"].includes(assignedProviderModel)) {
+      throw new ModelRuntimeError(
+        `${assignedProviderModel} cannot be assigned to ${assignmentKey} until a compatible embedding adapter is installed. Kai Studio will use lexical retrieval where available.`,
+        "configuration",
+      );
+    }
     const assigned: ModelDefinition = {
       ...template,
       id: `assigned.${assignmentKey}.${assignedProviderModel}`,

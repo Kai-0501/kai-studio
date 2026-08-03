@@ -22,7 +22,14 @@ export type ModelAssignments = {
   progressAssessor: string;
   orchestration: string;
   review: string;
-  embedding: string;
+  /**
+   * Legacy shared embedding assignment. Kept only so existing settings files
+   * can migrate without being discarded; new code must use the two scoped
+   * assignments below.
+   */
+  embedding?: string;
+  kaiLoreEmbedding: string;
+  codingEmbedding: string;
 };
 
 export type LocalModel = {

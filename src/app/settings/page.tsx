@@ -33,6 +33,8 @@ export default function SettingsPage() {
   const [modelSearchRoots, setModelSearchRoots] = useState<string[]>([]);
   const [modelRootDraft, setModelRootDraft] = useState("");
   const [validatingModel, setValidatingModel] = useState<string | null>(null);
+  const [retrieval, setRetrieval] = useState<{ kaiLore: { model: string; status: string; message: string; generation?: { dimensions?: number; model_revision?: string } | null }; coding: { model: string; status: string; message: string; hybridEnabled: boolean; reranker: string } } | null>(null);
+  const [reindexing, setReindexing] = useState(false);
 
   const availableModels = allModels(status);
 
@@ -41,11 +43,12 @@ export default function SettingsPage() {
     setMessage("");
 
     try {
-      const [statusResponse, settingsResponse, memoryResponse, performanceResponse] = await Promise.all([
+      const [statusResponse, settingsResponse, memoryResponse, performanceResponse, retrievalResponse] = await Promise.all([
         fetch("/api/system/status"),
         fetch("/api/settings"),
         fetch("/api/memory"),
         fetch("/api/performance"),
+        fetch("/api/retrieval/status"),
       ]);
       const systemStatus = (await statusResponse.json()) as SystemStatus;
       const settings =
@@ -65,6 +68,7 @@ export default function SettingsPage() {
       setPerformance(
         (await performanceResponse.json()) as GenerationPerformance[],
       );
+      setRetrieval(await retrievalResponse.json());
     } finally {
       setChecking(false);
     }
@@ -76,8 +80,9 @@ export default function SettingsPage() {
       fetch("/api/settings"),
       fetch("/api/memory"),
       fetch("/api/performance"),
+      fetch("/api/retrieval/status"),
     ])
-      .then(async ([statusResponse, settingsResponse, memoryResponse, performanceResponse]) => {
+      .then(async ([statusResponse, settingsResponse, memoryResponse, performanceResponse, retrievalResponse]) => {
         const systemStatus = (await statusResponse.json()) as SystemStatus;
         const settings =
           (await settingsResponse.json()) as KaiStudioSettings;
@@ -96,6 +101,7 @@ export default function SettingsPage() {
         setPerformance(
           (await performanceResponse.json()) as GenerationPerformance[],
         );
+        setRetrieval(await retrievalResponse.json());
       })
       .finally(() => setChecking(false));
   }, []);
@@ -149,6 +155,17 @@ export default function SettingsPage() {
     } finally {
       setValidatingModel(null);
     }
+  }
+
+  async function reindexKaiLore() {
+    setReindexing(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/retrieval/reindex", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain: "kailore" }) });
+      setMessage(response.ok ? "KaiLore reindex completed ✓" : "KaiLore reindex could not start.");
+      const statusResponse = await fetch("/api/retrieval/status");
+      setRetrieval(await statusResponse.json());
+    } finally { setReindexing(false); }
   }
 
   async function importMemoryFile(event: ChangeEvent<HTMLInputElement>) {
@@ -404,6 +421,30 @@ export default function SettingsPage() {
           </section>
 
           <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="font-semibold">Retrieval indexes</h2>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">KaiLore and coding retrieval have separate model assignments, vector dimensions, and index generations. Changing one never silently changes the other.</p>
+              </div>
+              <button type="button" onClick={reindexKaiLore} disabled={reindexing} className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:opacity-40">{reindexing ? "Reindexing…" : "Reindex KaiLore"}</button>
+            </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-[#0b0f18] p-4">
+                <p className="text-sm font-medium">KaiLore Embedding</p>
+                <p className="mt-2 text-sm text-sky-200">{retrieval?.kaiLore.model ?? modelAssignments.kaiLoreEmbedding}</p>
+                <p className="mt-2 text-xs text-slate-500">{retrieval?.kaiLore.message ?? "Checking index status…"}</p>
+                <p className="mt-2 text-xs text-slate-600">{retrieval?.kaiLore.generation ? `Dimension ${retrieval.kaiLore.generation.dimensions ?? "unknown"} · active generation` : "No active generation"}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-[#0b0f18] p-4">
+                <p className="text-sm font-medium">Coding Embedding</p>
+                <p className="mt-2 text-sm text-sky-200">{retrieval?.coding.model ?? modelAssignments.codingEmbedding}</p>
+                <p className="mt-2 text-xs text-slate-500">{retrieval?.coding.message ?? "Checking index status…"}</p>
+                <p className="mt-2 text-xs text-slate-600">Hybrid retrieval {retrieval?.coding.hybridEnabled ? "enabled" : "unavailable"} · Reranker: {retrieval?.coding.reranker ?? "not configured"}</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">
             <div>
               <h2 className="font-semibold">Model assignments <span className="text-xs font-normal text-slate-500">Hover or focus a ? to see what a role does.</span></h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
@@ -419,7 +460,7 @@ export default function SettingsPage() {
                     onChange={(event) => { setModelAssignments((current) => ({ ...current, [key]: event.target.value })); setMessage(""); }}
                     className="mt-3 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-sky-400/40"
                   >
-                    {!availableModels.some((model) => model.name === modelAssignments[key]) ? <option value={modelAssignments[key]}>{displayName(modelAssignments[key])} · unavailable</option> : null}
+                    {!availableModels.some((model) => model.name === modelAssignments[key]) && modelAssignments[key] ? <option value={modelAssignments[key]}>{displayName(modelAssignments[key])} · unavailable</option> : null}
                     {availableModels.map((model) => <option key={`${key}-${model.name}`} value={model.name}>{model.displayName ?? displayName(model.name)}{!isRunnableModel(model) ? " · needs validation" : ""}</option>)}
                   </select>
                   {!availableModels.some((model) => model.name === modelAssignments[key] && (model.status === "available" || model.provider === "ollama")) ? <span className="mt-2 block text-xs text-amber-300">Assigned model is unavailable or has not passed runtime validation. Save is preserved, but execution will show a clear warning.</span> : null}

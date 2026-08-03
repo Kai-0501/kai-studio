@@ -22,7 +22,20 @@ export async function readSettings(): Promise<KaiStudioSettings> {
   try {
     const contents = await readFile(settingsFile, "utf8");
     const saved = JSON.parse(contents) as Partial<KaiStudioSettings>;
-    return { ...defaultSettings, ...saved, modelAssignments: { ...defaultSettings.modelAssignments, ...(saved.modelAssignments ?? {}) }, modelSearchRoots: Array.isArray(saved.modelSearchRoots) ? saved.modelSearchRoots.filter((root): root is string => typeof root === "string") : [] };
+    const savedAssignments = (saved.modelAssignments ?? {}) as Partial<KaiStudioSettings["modelAssignments"]> & { embedding?: string };
+    // A previous release stored one global `embedding` assignment. Preserve it
+    // as the initial choice for both independent domains, rather than silently
+    // substituting a different model or losing the user's preference.
+    const legacyEmbedding = typeof savedAssignments.embedding === "string" ? savedAssignments.embedding : undefined;
+    const nonLegacyAssignments = { ...savedAssignments };
+    delete nonLegacyAssignments.embedding;
+    const assignments = {
+      ...defaultSettings.modelAssignments,
+      ...nonLegacyAssignments,
+      kaiLoreEmbedding: savedAssignments.kaiLoreEmbedding ?? legacyEmbedding ?? defaultSettings.modelAssignments.kaiLoreEmbedding,
+      codingEmbedding: savedAssignments.codingEmbedding ?? legacyEmbedding ?? defaultSettings.modelAssignments.codingEmbedding,
+    };
+    return { ...defaultSettings, ...saved, modelAssignments: assignments, modelSearchRoots: Array.isArray(saved.modelSearchRoots) ? saved.modelSearchRoots.filter((root): root is string => typeof root === "string") : [] };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultSettings;
     throw error;
