@@ -80,6 +80,7 @@ export function StudioChat({
   const [reviewedBuildId, setReviewedBuildId] = useState("");
   const [isApplyingBuild, setIsApplyingBuild] = useState(false);
   const [activeLoopState, setActiveLoopState] = useState<{ jobId: string; stepCount: number; inspectionCount: number; stepLimit: number; extensionCount: number; awaitingExtension: boolean; elapsedMinutes: number; executionBudgetMinutes: number; automaticExtensionMinutes: number; userExtensionMinutes: number; awaitingTimeDecision: boolean; latestMeaningfulProgress: string; currentPhase: string; currentAgent: string; currentRole: string; contextUtilization: number; currentRepositoryRevision: string; activeReservations: string[]; pendingHandoffs: number; currentBlockers: string[]; resourceWarning: string } | null>(null);
+  const [isDocumentVisible, setIsDocumentVisible] = useState(true);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioCaptureRef = useRef<AudioCapture | null>(null);
@@ -128,6 +129,13 @@ export function StudioChat({
       .then((response) => response.json() as Promise<KaiMemoryStatus>)
       .then(setMemoryStatus)
       .catch(() => setMemoryStatus(null));
+  }, []);
+
+  useEffect(() => {
+    const updateVisibility = () => setIsDocumentVisible(document.visibilityState === "visible");
+    updateVisibility();
+    document.addEventListener("visibilitychange", updateVisibility);
+    return () => document.removeEventListener("visibilitychange", updateVisibility);
   }, []);
 
   useEffect(() => {
@@ -761,9 +769,19 @@ export function StudioChat({
     modelOptions.find((option) => option.value === model) ?? modelOptions[1];
 
   return (
-    <section className="relative flex h-screen min-w-0 flex-1 flex-col overflow-hidden bg-[#0a0d14]">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/[0.06] px-5 sm:px-8">
+    <section className={`kai-chat-canvas kai-chat-${messages.length === 0 ? "empty" : "active"} ${isDocumentVisible ? "" : "kai-chat-hidden"} relative flex h-screen min-w-0 flex-1 flex-col overflow-hidden`}>
+      <div className="kai-chat-atmosphere" aria-hidden="true" />
+      <header className="kai-chat-topbar relative z-10 flex h-14 shrink-0 items-center justify-between border-b border-white/[0.06] px-4 sm:px-7">
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("kai:toggle-chat-sidebar"))}
+            className="rounded-lg border border-white/10 px-2.5 py-2 text-sm text-slate-400 transition hover:border-sky-400/30 hover:bg-sky-400/10 hover:text-sky-200 focus:outline-none focus:ring-2 focus:ring-sky-300/70"
+            aria-label="Toggle Chat sidebar"
+            title="Toggle Chat sidebar (⌘\\)"
+          >
+            ☰
+          </button>
           <Link
             href="/"
             className="rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-400 transition hover:border-sky-400/30 hover:bg-sky-400/10 hover:text-sky-200"
@@ -806,14 +824,11 @@ export function StudioChat({
       <div
         ref={scrollContainerRef}
         onScroll={handleConversationScroll}
-        className="min-h-0 flex-1 overflow-y-auto"
+        className="relative z-10 min-h-0 flex-1 overflow-y-auto"
       >
         {messages.length === 0 ? (
-          <div className="mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center px-6 pb-32 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500 text-xl font-semibold shadow-[0_0_50px_rgba(139,92,246,0.2)]">
-              K
-            </div>
-            <h1 className="mt-7 text-3xl font-medium tracking-tight sm:text-4xl">
+          <div className="kai-empty-state mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center px-6 pb-32 text-center">
+            <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">
               What&apos;s on your mind?
             </h1>
             <p className="mt-3 max-w-lg text-sm leading-6 text-slate-500">
@@ -823,7 +838,7 @@ export function StudioChat({
             </p>
           </div>
         ) : (
-          <div className="mx-auto max-w-3xl px-5 pb-40 pt-8 sm:px-8">
+          <div className="mx-auto max-w-3xl px-5 pb-40 pt-6 sm:px-8">
             <div className="space-y-8">
               {messages.map((message, index) => (
                 <article
@@ -906,11 +921,11 @@ export function StudioChat({
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0a0d14] via-[#0a0d14] to-transparent px-4 pb-5 pt-14 sm:px-8">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#0a0d14] via-[#0a0d14] to-transparent px-4 pb-5 pt-14 sm:px-8">
         <form
           ref={composerFormRef}
           onSubmit={sendMessage}
-          className="pointer-events-auto mx-auto max-w-3xl rounded-[1.65rem] border border-white/10 bg-[#181c24] p-2 shadow-2xl shadow-black/35 focus-within:border-white/20"
+          className="kai-chat-composer pointer-events-auto mx-auto max-w-3xl rounded-[1.65rem] border border-white/10 bg-[#181c24]/90 p-2 shadow-2xl shadow-black/35 backdrop-blur-xl focus-within:border-sky-300/25"
         >
           {images.length > 0 && (
             <div className="flex flex-wrap gap-2 px-2 pb-2">
