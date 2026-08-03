@@ -98,4 +98,4 @@ async function main() {
   }
 }
 
-if (process.env.NODE_ENV !== "test") main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; });
+if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; });
