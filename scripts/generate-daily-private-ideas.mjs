@@ -24,6 +24,24 @@ function publicSchema(schema) {
   return copy;
 }
 
+export function providerSchema(schema, targetProvider) {
+  const copy = publicSchema(schema);
+  // Gemini's response-schema endpoint rejects minProperties even though it is
+  // valid JSON Schema. The authoritative local schema retains it and the
+  // semantic validator rejects empty contracts after generation.
+  if (targetProvider === "gemini") {
+    const normalize = (value) => {
+      if (Array.isArray(value)) return value.forEach(normalize);
+      if (!value || typeof value !== "object") return;
+      delete value.minProperties;
+      if (value.additionalProperties === true) delete value.additionalProperties;
+      Object.values(value).forEach(normalize);
+    };
+    normalize(copy);
+  }
+  return copy;
+}
+
 export function expectedIdeaCount(value = process.env.IDEA_COUNT || "3") {
   const count = Number(value);
   if (!Number.isInteger(count) || ![1, 3].includes(count)) throw new Error("IDEA_COUNT must be exactly 1 (manual review) or 3 (daily schedule).");
@@ -39,7 +57,8 @@ function systemInstruction() {
 }
 
 export function providerRequest(prompt, schema, targetProvider = provider) {
-  const contract = `${prompt}\n\n# Required JSON contract\n${JSON.stringify(publicSchema(schema))}`;
+  const responseSchema = providerSchema(schema, targetProvider);
+  const contract = `${prompt}\n\n# Required JSON contract\n${JSON.stringify(responseSchema)}`;
   if (targetProvider === "gemini") {
     return {
       url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(required(model, "AI_MODEL"))}:generateContent`,
@@ -49,7 +68,7 @@ export function providerRequest(prompt, schema, targetProvider = provider) {
         body: JSON.stringify({
           system_instruction: { parts: [{ text: systemInstruction() }] },
           contents: [{ role: "user", parts: [{ text: contract }] }],
-          generationConfig: { maxOutputTokens: 32768, responseMimeType: "application/json", responseJsonSchema: publicSchema(schema) },
+          generationConfig: { maxOutputTokens: 32768, responseMimeType: "application/json", responseJsonSchema: responseSchema },
         }),
       },
     };

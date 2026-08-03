@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compactSeedSchema, expectedIdeaCount, selectSeeds, validateIdea, validateIdeas } from "../scripts/generate-daily-private-ideas.mjs";
+import { compactSeedSchema, expectedIdeaCount, providerSchema, selectSeeds, validateIdea, validateIdeas } from "../scripts/generate-daily-private-ideas.mjs";
 import { documentsFor, validateIdeas as validateCreatedIdeas } from "../scripts/create-daily-private-ideas.mjs";
 
 const detail = (text) => `${text}. This is concrete enough for a coding agent to implement and verify without making an unstated product decision.`;
@@ -63,6 +63,15 @@ test("manual and scheduled counts are constrained", () => {
   assert.equal(expectedIdeaCount("3"), 3);
   assert.throws(() => expectedIdeaCount("2"));
   assert.equal(compactSeedSchema(1).properties.ideas.maxItems, 1);
+});
+
+test("Gemini receives a compatible response-schema projection while local schema stays strict", () => {
+  const authoritative = { type: "object", minProperties: 1, properties: { nested: { type: "object", minProperties: 1, additionalProperties: true } } };
+  const gemini = providerSchema(authoritative, "gemini");
+  assert.equal(authoritative.minProperties, 1);
+  assert.equal(gemini.minProperties, undefined);
+  assert.equal(gemini.properties.nested.minProperties, undefined);
+  assert.equal(gemini.properties.nested.additionalProperties, undefined);
 });
 
 test("candidate filtering happens before expansion and keeps distinct greenfield work", () => {
