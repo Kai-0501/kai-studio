@@ -32,7 +32,10 @@ export function providerSchema(schema, targetProvider) {
       if (Array.isArray(value)) return value.forEach(normalize);
       if (!value || typeof value !== "object") return;
       delete value.minProperties;
-      if (value.additionalProperties === true) delete value.additionalProperties;
+      // The legacy generateContent Schema message rejects this JSON-Schema
+      // keyword for either boolean value. The full local contract remains the
+      // authority; this is only a provider-compatible projection.
+      delete value.additionalProperties;
       Object.values(value).forEach(normalize);
     };
     normalize(copy);

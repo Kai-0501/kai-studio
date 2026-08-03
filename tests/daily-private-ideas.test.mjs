@@ -66,10 +66,12 @@ test("manual and scheduled counts are constrained", () => {
 });
 
 test("Gemini receives a compatible response-schema projection while local schema stays strict", () => {
-  const authoritative = { type: "object", minProperties: 1, properties: { nested: { type: "object", minProperties: 1, additionalProperties: true } } };
+  const authoritative = { type: "object", minProperties: 1, additionalProperties: false, properties: { nested: { type: "object", minProperties: 1, additionalProperties: true } } };
   const gemini = providerSchema(authoritative, "gemini");
   assert.equal(authoritative.minProperties, 1);
+  assert.equal(authoritative.additionalProperties, false);
   assert.equal(gemini.minProperties, undefined);
+  assert.equal(gemini.additionalProperties, undefined);
   assert.equal(gemini.properties.nested.minProperties, undefined);
   assert.equal(gemini.properties.nested.additionalProperties, undefined);
 });
