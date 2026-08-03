@@ -117,13 +117,22 @@ async function main() {
   const ideas = [];
   for (const [index, seed] of seeds.ideas.entries()) {
     let candidate = await expandIdea(seed, instructions, context, repositories, singleIdeaSchema);
-    try { ideas.push(validateIdea(candidate, index)); }
-    catch (firstError) {
-      const repairPrompt = `${instructions}\n\nRepair this one invalid specification without changing its core app. Return only the fixed idea object.\n\n# Validation failure\n${firstError.message}\n\n# Invalid specification\n${JSON.stringify(candidate)}`;
-      candidate = JSON.parse(await generate(repairPrompt, singleIdeaSchema));
-      ideas.push(validateIdea(candidate, index));
+    let validated;
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try { validated = validateIdea(candidate, index); break; }
+      catch (error) {
+        lastError = error;
+        if (attempt === 3) break;
+        const repairPrompt = `${instructions}\n\nRepair this one invalid specification without changing its core app. Return only the fixed idea object. This is attempt ${attempt + 1} of 3. Preserve every required test level exactly once, including a concrete performance test.\n\n# Validation failure\n${error.message}\n\n# Invalid specification\n${JSON.stringify(candidate)}`;
+        candidate = JSON.parse(await generate(repairPrompt, singleIdeaSchema));
+      }
     }
-    console.log(`Validated greenfield architecture ${index + 1}/3: ${ideas.at(-1).title}`);
+    if (!validated) {
+      throw new Error(`${lastError?.message || `Idea ${index + 1} could not be validated.`} The provider exhausted three constrained repair attempts.`);
+    }
+    ideas.push(validated);
+    console.log(`Validated greenfield architecture ${index + 1}/3: ${validated.title}`);
   }
   const output = validateIdeas({ ideas });
   await writeFile(required(process.env.IDEAS_OUTPUT_FILE, "IDEAS_OUTPUT_FILE"), `${JSON.stringify(output, null, 2)}\n`, "utf8");

@@ -1,6 +1,8 @@
 {
   "name": "kai-studio",
   "version": "0.1.0",
+  "description": "Private local AI workspace for Kai.",
+  "author": "Kai",
   "private": true,
   "scripts": {
     "dev": "next dev",
