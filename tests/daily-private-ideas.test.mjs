@@ -93,17 +93,18 @@ test("Gemini structured output receives the compatible response schema", () => {
   }
 });
 
-test("Gemini candidate JSON mode can omit an incompatible nested transport grammar", () => {
+test("Gemini candidate transport uses primitive items instead of an incompatible nested grammar", () => {
   const previousKey = process.env.AI_API_KEY;
   const previousModel = process.env.AI_MODEL;
   process.env.AI_API_KEY = "test-key";
   process.env.AI_MODEL = "gemini-test";
   try {
-    const request = providerRequest("Return concise candidates", compactSeedSchema(3), "gemini", 4096, false);
+    const candidateTransport = { type: "object", properties: { ideas: { type: "array", minItems: 3, maxItems: 3, items: { type: "string" } } }, required: ["ideas"] };
+    const request = providerRequest("Return concise candidates", compactSeedSchema(3), "gemini", 4096, candidateTransport);
     const payload = JSON.parse(request.init.body);
     assert.equal(payload.generationConfig.responseMimeType, "application/json");
     assert.equal(payload.generationConfig.maxOutputTokens, 4096);
-    assert.equal(payload.generationConfig.responseSchema, undefined);
+    assert.deepEqual(payload.generationConfig.responseSchema, candidateTransport);
   } finally {
     if (previousKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = previousKey;
     if (previousModel === undefined) delete process.env.AI_MODEL; else process.env.AI_MODEL = previousModel;
