@@ -213,8 +213,8 @@ export function validateIdea(idea, index = 0) {
   const label = `Idea ${index + 1}`;
   if (!idea || typeof idea !== "object") throw new Error(`${label} is not an object.`);
   expectText(idea, ["schema_version", "application_name", "repository_slug"], label, 1);
-  expectText(idea, ["product_definition", "problem", "target_user", "application_type", "selected_runtime", "architecture_overview", "backend_architecture", "persistence", "security_and_privacy", "permissions", "failure_and_recovery"], label, 12);
-  expectList(idea, ["primary_use_cases", "non_goals", "supported_platforms", "selected_frameworks", "state_transitions", "risks"], label, 1);
+  expectText(idea, ["product_definition", "problem", "target_user", "application_type", "selected_runtime", "architecture_overview", "backend_architecture", "persistence"], label, 12);
+  expectList(idea, ["primary_use_cases", "non_goals", "supported_platforms", "selected_frameworks", "state_transitions", "security_and_privacy", "permissions", "failure_and_recovery", "risks"], label, 1);
   if (/kai\s*studio|plugin|extension/i.test(`${idea.application_name}\n${idea.product_definition}`)) throw new Error(`${label} is not a standalone greenfield app.`);
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(idea.repository_slug)) throw new Error(`${label} needs a stable kebab-case repository_slug.`);
 
