@@ -106,6 +106,14 @@ test("mechanical missing scoring identifiers are derived from provider-authored 
   assert.equal(validateIdea(canonical, 0).application_name, "Local Evidence Ledger");
 });
 
+test("concise but schema-valid domain and subsystem names remain accepted", () => {
+  const idea = validIdea();
+  idea.domain_model.entities[0].name = "Timer";
+  idea.subsystem_contracts[0].name = "Clock";
+  idea.coding_agent_handoff.subsystem_contract_references[0] = "Clock";
+  assert.equal(validateIdea(idea, 0).domain_model.entities[0].name, "Timer");
+});
+
 test("vague mechanisms and missing scoring detail are rejected", () => {
   const idea = validIdea();
   idea.subsystem_contracts[0].selected_mechanism = "Generate a score";

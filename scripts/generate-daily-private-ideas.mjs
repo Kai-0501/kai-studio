@@ -171,7 +171,8 @@ function noFiller(values, label) {
 function validateDomainModel(domainModel, label) {
   if (!Array.isArray(domainModel?.entities) || domainModel.entities.length < 2) throw new Error(`${label} needs at least two MVP domain entities.`);
   for (const entity of domainModel.entities) {
-    expectText(entity, ["name", "responsibility", "lifecycle", "persistence_location"], `${label} domain entity`, 10);
+    expectText(entity, ["name"], `${label} domain entity`, 3);
+    expectText(entity, ["responsibility", "lifecycle", "persistence_location"], `${label} domain entity`, 10);
     expectList(entity, ["relationships"], `${label} domain entity`, 1);
     if (!entity.stable_identifier || !isText(entity.stable_identifier.name, 1) || !isText(entity.stable_identifier.type, 1)) throw new Error(`${label} domain entity needs a stable identifier.`);
     if (!Array.isArray(entity.required_fields) || entity.required_fields.length < 1 || !Array.isArray(entity.optional_fields)) throw new Error(`${label} domain entity needs required and optional field schemas.`);
@@ -185,7 +186,8 @@ function validateDomainModel(domainModel, label) {
 function validateSubsystems(subsystems, label) {
   if (!Array.isArray(subsystems) || subsystems.length < 2) throw new Error(`${label} needs concrete major subsystem contracts.`);
   for (const subsystem of subsystems) {
-    expectText(subsystem, ["name", "responsibility", "selected_mechanism", "persistence_effects", "recovery_behaviour", "security_boundary", "verification_method"], `${label} subsystem`, 10);
+    expectText(subsystem, ["name"], `${label} subsystem`, 3);
+    expectText(subsystem, ["responsibility", "selected_mechanism", "persistence_effects", "recovery_behaviour", "security_boundary", "verification_method"], `${label} subsystem`, 10);
     expectList(subsystem, ["failure_modes"], `${label} subsystem`, 1);
     meaningfulObject(subsystem.input_schema, `${label}.subsystem_contracts.${subsystem.name || "unknown"}.input_schema`);
     meaningfulObject(subsystem.output_schema, `${label}.subsystem_contracts.${subsystem.name || "unknown"}.output_schema`);
