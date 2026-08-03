@@ -93,6 +93,23 @@ test("Gemini structured output receives the compatible response schema", () => {
   }
 });
 
+test("Gemini candidate JSON mode can omit an incompatible nested transport grammar", () => {
+  const previousKey = process.env.AI_API_KEY;
+  const previousModel = process.env.AI_MODEL;
+  process.env.AI_API_KEY = "test-key";
+  process.env.AI_MODEL = "gemini-test";
+  try {
+    const request = providerRequest("Return concise candidates", compactSeedSchema(3), "gemini", 4096, false);
+    const payload = JSON.parse(request.init.body);
+    assert.equal(payload.generationConfig.responseMimeType, "application/json");
+    assert.equal(payload.generationConfig.maxOutputTokens, 4096);
+    assert.equal(payload.generationConfig.responseSchema, undefined);
+  } finally {
+    if (previousKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = previousKey;
+    if (previousModel === undefined) delete process.env.AI_MODEL; else process.env.AI_MODEL = previousModel;
+  }
+});
+
 
 test("candidate filtering happens before expansion and keeps distinct greenfield work", () => {
   const candidates = [
