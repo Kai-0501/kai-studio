@@ -1,8 +1,19 @@
 import { readSettings, writeSettings } from "@/lib/settings-store";
 import type { ModelAssignments } from "@/types/settings";
+import os from "node:os";
+import path from "node:path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function isSafeModelRoot(value: string) {
+  const root = path.resolve(value.trim());
+  const home = path.resolve(os.homedir());
+  // A model root must be a deliberate subfolder.  Scanning / or the whole
+  // home directory would turn a local convenience feature into broad file
+  // discovery, so reject both (and Git internals) at registration time.
+  return root !== path.parse(root).root && root !== home && !root.split(path.sep).includes(".git");
+}
 
 export async function GET() {
   return Response.json(await readSettings());
@@ -16,6 +27,7 @@ export async function PUT(request: Request) {
     memoryDebugEnabled?: unknown;
     codingContextLimit?: unknown;
     codingBudgetOverrideMinutes?: unknown;
+    modelSearchRoots?: unknown;
   };
 
   if (
@@ -27,6 +39,10 @@ export async function PUT(request: Request) {
       { error: "Choose an installed local model." },
       { status: 400 },
     );
+  }
+
+  if (body.modelSearchRoots !== undefined && (!Array.isArray(body.modelSearchRoots) || body.modelSearchRoots.some((root) => typeof root !== "string" || !root.trim() || root.length > 4096 || !isSafeModelRoot(root)))) {
+    return Response.json({ error: "Model folders must be valid local paths." }, { status: 400 });
   }
 
   if (body.codingContextLimit !== undefined && body.codingContextLimit !== 16384 && body.codingContextLimit !== 32768) {
@@ -68,5 +84,6 @@ export async function PUT(request: Request) {
       : {}),
     ...(body.codingContextLimit === 16384 || body.codingContextLimit === 32768 ? { codingContextLimit: body.codingContextLimit } : {}),
     ...(body.codingBudgetOverrideMinutes === null || typeof body.codingBudgetOverrideMinutes === "number" ? { codingBudgetOverrideMinutes: body.codingBudgetOverrideMinutes } : {}),
+    ...(Array.isArray(body.modelSearchRoots) ? { modelSearchRoots: [...new Set(body.modelSearchRoots.map((root) => path.resolve(root.trim())))] } : {}),
   }));
 }

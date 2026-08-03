@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --experimental-loader ./tests/alias-loader.mjs --test tests/*.test.mjs",
+    "test": "NODE_ENV=test node --experimental-strip-types --experimental-loader ./tests/alias-loader.mjs --test tests/*.test.mjs",
     "desktop:prepare": "node electron/prepare.mjs",
     "desktop:build": "npm run build && npm run desktop:prepare && electron-builder --mac dir",
     "desktop:dmg": "npm run build && npm run desktop:prepare && electron-builder --mac dmg"

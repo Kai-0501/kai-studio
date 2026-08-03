@@ -6,7 +6,8 @@ import { recordInference } from "@/lib/models/telemetry";
 import type { GenerateRequest, GenerateResult, ModelCapability, ModelDefinition, ModelProvider, ModelRole } from "@/lib/models/types";
 import { ModelRuntimeError } from "@/lib/models/types";
 import { readSettings } from "@/lib/settings-store";
-import { ensureHuggingFaceModel } from "@/lib/local-model-runtime";
+import { ensureManagedLocalModel, isManagedLocalModel } from "@/lib/local-model-runtime";
+import type { ModelAssignments } from "@/types/settings";
 
 const providers = new Map<string, ModelProvider>([
   [ollamaProvider.id, ollamaProvider],
@@ -16,6 +17,21 @@ const providers = new Map<string, ModelProvider>([
 
 export function registerModelProvider(provider: ModelProvider) { providers.set(provider.id, provider); }
 
+const assignmentKeyByRole: Partial<Record<ModelRole, keyof ModelAssignments>> = {
+  "coder.primary": "coding",
+  "security.preflight": "security",
+  "security.postflight": "security",
+  "editorial.primary": "editorial",
+  "vision.extractor": "vision",
+  "diagnostics.primary": "diagnostics",
+  "diagnostics.parser": "diagnosticsParser",
+  "progress.assessor": "progressAssessor",
+  "orchestrator.cloud": "orchestration",
+  "review.primary": "review",
+  "memory.embedding": "embedding",
+  "chat.default": "chat",
+};
+
 export function modelSatisfiesRoute(model: ModelDefinition, capabilities: ModelCapability[], localOnly?: boolean) {
   return model.enabled && (!localOnly || model.provider === "ollama" || model.provider === "openai-compatible") && capabilities.every((capability) => model.capabilities.includes(capability)) && (!capabilities.includes("tools") || model.supportsTools) && (!capabilities.includes("structured-output") || model.supportsStructuredOutput);
 }
@@ -24,7 +40,7 @@ export async function resolveRole(role: ModelRole, signal?: AbortSignal) {
   const route = roleRoutes[role];
   if (!route) throw new ModelRuntimeError(`No route is configured for ${role}.`, "configuration");
   const settings = await readSettings();
-  const assignmentKey = role === "coder.primary" ? "coding" : role.startsWith("security.") ? "security" : role === "editorial.primary" ? "editorial" : role === "vision.extractor" ? "vision" : role === "diagnostics.primary" ? "diagnostics" : role === "diagnostics.parser" ? "diagnosticsParser" : role === "progress.assessor" ? "progressAssessor" : role === "orchestrator.cloud" ? "orchestration" : role === "review.primary" ? "review" : role === "memory.embedding" ? "embedding" : role === "chat.default" ? "chat" : undefined;
+  const assignmentKey = assignmentKeyByRole[role];
   const assignedProviderModel = assignmentKey ? settings.modelAssignments[assignmentKey] : undefined;
   const template = modelRegistry.get(route.primary);
   if (assignedProviderModel && template) {
@@ -32,8 +48,9 @@ export async function resolveRole(role: ModelRole, signal?: AbortSignal) {
       ...template,
       id: `assigned.${assignmentKey}.${assignedProviderModel}`,
       displayName: assignedProviderModel,
-      provider: assignedProviderModel.startsWith("hf:") ? "openai-compatible" : assignedProviderModel.startsWith("gemini") ? "gemini" : "ollama",
+      provider: isManagedLocalModel(assignedProviderModel) ? "openai-compatible" : assignedProviderModel.startsWith("gemini") ? "gemini" : "ollama",
       providerModel: assignedProviderModel,
+      endpoint: isManagedLocalModel(assignedProviderModel) ? "http://127.0.0.1:11435/v1" : template.endpoint,
       capabilities: [...new Set([...template.capabilities, ...route.requiredCapabilities])],
       supportsTools: template.supportsTools || route.requiredCapabilities.includes("tools"),
       supportsStructuredOutput: template.supportsStructuredOutput || route.requiredCapabilities.includes("structured-output"),
@@ -41,7 +58,7 @@ export async function resolveRole(role: ModelRole, signal?: AbortSignal) {
     };
     const provider = providers.get(assigned.provider);
     if (assigned.provider === "openai-compatible") {
-      await ensureHuggingFaceModel(assigned.providerModel);
+      await ensureManagedLocalModel(assigned.providerModel);
     }
     if (provider && modelSatisfiesRoute(assigned, route.requiredCapabilities, route.localOnly) && await provider.health(assigned, signal)) {
       return { model: assigned, provider, fallbackUsed: false };

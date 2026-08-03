@@ -10,11 +10,13 @@ import type {
 import type { KaiMemoryStatus } from "@/types/memory";
 import type { GenerationPerformance } from "@/types/performance";
 import { DashboardBackLink } from "@/components/dashboard-back-link";
+import { ModelRoleHelp } from "@/components/model-role-help";
+import { defaultModelAssignments, modelRoleDescription } from "@/lib/models/roles";
 
 export default function SettingsPage() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [defaultModel, setDefaultModel] = useState("gemma4:12b-mlx");
-  const [modelAssignments, setModelAssignments] = useState<ModelAssignments>({ chat: "gemma4:26b-mlx", meeting: "gemma4:12b-mlx", editorial: "gemma4:12b-mlx", account: "gemma4:26b-mlx", general: "gemma4:26b-mlx", coding: "qwen3.6:27b-mtp-q4_K_M", security: "gpt-oss-safeguard:20b", vision: "glm-ocr", diagnostics: "gemma4:31b-mlx", diagnosticsParser: "gemma4:12b-mlx", progressAssessor: "gemma4:12b-mlx", orchestration: "gemini-2.5-pro", review: "gemma4:31b-mlx", embedding: "local-hash" });
+  const [modelAssignments, setModelAssignments] = useState<ModelAssignments>(defaultModelAssignments);
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(true);
   const [memoryDebugEnabled, setMemoryDebugEnabled] = useState(false);
   const [codingContextLimit, setCodingContextLimit] = useState<16384 | 32768>(32768);
@@ -28,6 +30,11 @@ export default function SettingsPage() {
   const [memoryMessage, setMemoryMessage] = useState("");
   const [savingMemory, setSavingMemory] = useState(false);
   const [performance, setPerformance] = useState<GenerationPerformance[]>([]);
+  const [modelSearchRoots, setModelSearchRoots] = useState<string[]>([]);
+  const [modelRootDraft, setModelRootDraft] = useState("");
+  const [validatingModel, setValidatingModel] = useState<string | null>(null);
+
+  const availableModels = allModels(status);
 
   async function checkSystem() {
     setChecking(true);
@@ -50,6 +57,7 @@ export default function SettingsPage() {
       setMemoryDebugEnabled(settings.memoryDebugEnabled);
       setCodingContextLimit(settings.codingContextLimit);
       setCodingBudgetOverrideMinutes(settings.codingBudgetOverrideMinutes);
+      setModelSearchRoots(settings.modelSearchRoots ?? []);
       const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
       setMemory(currentMemory);
       setMemoryDraft(currentMemory.content);
@@ -80,6 +88,7 @@ export default function SettingsPage() {
         setMemoryDebugEnabled(settings.memoryDebugEnabled);
         setCodingContextLimit(settings.codingContextLimit);
         setCodingBudgetOverrideMinutes(settings.codingBudgetOverrideMinutes);
+        setModelSearchRoots(settings.modelSearchRoots ?? []);
         const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
         setMemory(currentMemory);
         setMemoryDraft(currentMemory.content);
@@ -105,11 +114,41 @@ export default function SettingsPage() {
         memoryDebugEnabled,
         codingContextLimit,
         codingBudgetOverrideMinutes,
+        modelSearchRoots,
       }),
     });
 
     setMessage(response.ok ? "Model settings saved ✓" : "Could not save settings.");
     setSaving(false);
+  }
+
+  function addModelRoot() {
+    const root = modelRootDraft.trim();
+    if (!root || modelSearchRoots.includes(root)) return;
+    if (root === "/" || root === "~" || root.endsWith("/.git") || root === "/Users/kai") {
+      setMessage("Choose a dedicated model folder, not your whole home folder or a Git directory.");
+      return;
+    }
+    setModelSearchRoots((current) => [...current, root]);
+    setModelRootDraft("");
+    setMessage("Save model folders, then check connection to rescan.");
+  }
+
+  async function validateModel(model: string) {
+    setValidatingModel(model);
+    setMessage("");
+    try {
+      const response = await fetch("/api/system/models/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model }),
+      });
+      const result = (await response.json()) as { error?: string };
+      setMessage(response.ok ? "Local runtime validation completed ✓" : result.error ?? "This model could not be validated.");
+      await checkSystem();
+    } finally {
+      setValidatingModel(null);
+    }
   }
 
   async function importMemoryFile(event: ChangeEvent<HTMLInputElement>) {
@@ -204,7 +243,7 @@ export default function SettingsPage() {
                     className={`h-2.5 w-2.5 rounded-full ${
                       checking
                         ? "animate-pulse bg-amber-400"
-                        : status?.ollamaOnline || status?.huggingFaceModels?.length
+                        : status?.ollamaOnline || availableModels.length
                           ? "bg-emerald-400"
                           : "bg-red-400"
                     }`}
@@ -212,7 +251,7 @@ export default function SettingsPage() {
                   <h2 className="font-semibold">
                     {checking
                       ? "Checking local models…"
-                      : status?.ollamaOnline || status?.huggingFaceModels?.length
+                      : status?.ollamaOnline || availableModels.length
                         ? "Local models are ready"
                         : "Local models are unavailable"}
                   </h2>
@@ -231,7 +270,7 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            {!checking && !status?.ollamaOnline && !status?.huggingFaceModels?.length && (
+            {!checking && !status?.ollamaOnline && availableModels.length === 0 && (
               <p className="mt-5 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-300">
                 Kai Studio could not find an available local model runtime.
               </p>
@@ -301,12 +340,12 @@ export default function SettingsPage() {
             <div>
               <h2 className="font-semibold">Installed local models</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Models detected from Ollama and your managed Hugging Face library.
+                Discovered from Ollama, Kai-managed runtimes, approved local folders, and the Hugging Face cache. Discovery does not claim a model can run until its runtime validates it.
               </p>
             </div>
 
             <div className="mt-6 grid gap-3">
-              {[...(status?.models ?? []), ...(status?.huggingFaceModels ?? [])].map((model) => (
+              {availableModels.map((model) => (
                 <label
                   key={model.name}
                   className={`flex cursor-pointer items-center justify-between gap-4 rounded-xl border p-4 transition ${
@@ -325,25 +364,27 @@ export default function SettingsPage() {
                         setDefaultModel(model.name);
                         setMessage("");
                       }}
-                      className="accent-sky-500"
+                      disabled={!isRunnableModel(model)}
+                      className="accent-sky-500 disabled:cursor-not-allowed"
                     />
                     <div>
-                      <p className="text-sm font-medium">{displayName(model.name)}</p>
+                      <p className="text-sm font-medium">{model.displayName ?? displayName(model.name)}</p>
                       <p className="mt-1 text-xs text-slate-500">
-                        {model.provider === "huggingface" ? "Hugging Face · managed by Kai Studio" : "Ollama"}
+                        {modelOwnershipLabel(model)}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs text-emerald-300">Installed</p>
+                    <p className={`text-xs ${isRunnableModel(model) ? "text-emerald-300" : "text-amber-300"}`}>{isRunnableModel(model) ? "Available" : "Discovered candidate"}</p>
                     <p className="mt-1 text-xs text-slate-600">
                       {formatBytes(model.size)}
                     </p>
+                    {!isRunnableModel(model) && model.runtime === "llama.cpp" ? <button type="button" onClick={(event) => { event.preventDefault(); void validateModel(model.name); }} disabled={validatingModel === model.name} className="mt-2 text-xs text-sky-300 hover:text-sky-200 disabled:opacity-50">{validatingModel === model.name ? "Validating…" : "Validate runtime"}</button> : null}
                   </div>
                 </label>
               ))}
 
-              {!checking && status?.models.length === 0 && status?.huggingFaceModels?.length === 0 && (
+              {!checking && availableModels.length === 0 && (
                 <p className="rounded-xl border border-dashed border-white/10 p-6 text-sm text-slate-500">
                   No Kai Studio-compatible local models were found.
                 </p>
@@ -355,7 +396,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={saveDefault}
-                disabled={saving || !((status?.models.length ?? 0) + (status?.huggingFaceModels?.length ?? 0))}
+                disabled={saving || availableModels.length === 0}
                 className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-3 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {saving ? "Saving…" : "Save default"}
@@ -365,7 +406,7 @@ export default function SettingsPage() {
 
           <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">
             <div>
-              <h2 className="font-semibold">Model assignments</h2>
+              <h2 className="font-semibold">Model assignments <span className="text-xs font-normal text-slate-500">Hover or focus a ? to see what a role does.</span></h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
                 Choose which installed model powers each part of Kai Studio. Coding assignments inherit the complete bounded coding toolbelt automatically; security remains a separate review role.
               </p>
@@ -373,22 +414,36 @@ export default function SettingsPage() {
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               {(Object.keys(modelAssignments) as Array<keyof ModelAssignments>).map((key) => (
                 <label key={key} className="rounded-xl border border-white/10 bg-[#0b0f18] p-4">
-                  <span className="block text-sm font-medium capitalize">{key === "general" ? "General Intelligence" : key === "account" ? "Account Intelligence" : key === "editorial" ? "Editorial Intelligence" : key === "meeting" ? "Meeting Intelligence" : key === "diagnosticsParser" ? "Diagnostics parser" : key === "progressAssessor" ? "Ambiguous-progress assessor" : key === "orchestration" ? "Orchestration" : key === "review" ? "Review" : key}</span>
+                  <span className="flex items-center text-sm font-medium">{modelRoleDescription(key).label}<ModelRoleHelp role={modelRoleDescription(key)} /></span>
                   <select
                     value={modelAssignments[key]}
                     onChange={(event) => { setModelAssignments((current) => ({ ...current, [key]: event.target.value })); setMessage(""); }}
                     className="mt-3 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-sky-400/40"
                   >
-                    {[...(status?.models ?? []), ...(status?.huggingFaceModels ?? [])].map((model) => <option key={`${key}-${model.name}`} value={model.name}>{displayName(model.name)}</option>)}
+                    {!availableModels.some((model) => model.name === modelAssignments[key]) ? <option value={modelAssignments[key]}>{displayName(modelAssignments[key])} · unavailable</option> : null}
+                    {availableModels.map((model) => <option key={`${key}-${model.name}`} value={model.name} disabled={!isRunnableModel(model)}>{model.displayName ?? displayName(model.name)}{!isRunnableModel(model) ? " · needs validation" : ""}</option>)}
                   </select>
-                  {!([...((status?.models ?? [])), ...((status?.huggingFaceModels ?? []))].some((model) => model.name === modelAssignments[key])) ? <span className="mt-2 block text-xs text-amber-300">Assigned model is unavailable. Save is blocked until it is installed or changed.</span> : null}
+                  {!availableModels.some((model) => model.name === modelAssignments[key] && (model.status === "available" || model.provider === "ollama")) ? <span className="mt-2 block text-xs text-amber-300">Assigned model is unavailable or has not passed runtime validation. Save is preserved, but execution will show a clear warning.</span> : null}
                 </label>
               ))}
             </div>
             <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-5">
-              <p className="text-xs text-slate-500">Newly downloaded Ollama models appear after opening Settings or pressing Check connection.</p>
+              <p className="text-xs text-slate-500">Model selections remain saved even when a model is temporarily unavailable. Kai Studio never silently substitutes a different assignment.</p>
               <button type="button" onClick={saveDefault} disabled={saving} className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-2.5 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:opacity-40">{saving ? "Saving…" : "Save assignments"}</button>
             </div>
+          </section>
+
+          <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">
+            <h2 className="font-semibold">Local model folders</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Kai Studio scans only approved folders: your Models folder, its own managed folders, the Hugging Face cache, and folders you add here. It never scans your entire home folder.</p>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <input value={modelRootDraft} onChange={(event) => setModelRootDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addModelRoot(); } }} placeholder="Paste a local model folder path" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0b0f18] px-4 py-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-sky-400/40" />
+              <button type="button" onClick={addModelRoot} className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-4 py-3 text-sm font-medium text-sky-200 hover:bg-sky-400/25">Register folder</button>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {modelSearchRoots.length ? modelSearchRoots.map((root) => <div key={root} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#0b0f18] px-4 py-3 text-sm"><span className="min-w-0 truncate text-slate-300">{root}</span><button type="button" onClick={() => setModelSearchRoots((current) => current.filter((candidate) => candidate !== root))} className="text-xs text-slate-500 hover:text-red-300">Remove</button></div>) : <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-500">No extra folders registered. This is optional; standard approved locations are always scanned.</p>}
+            </div>
+            <div className="mt-5 flex justify-end border-t border-white/10 pt-5"><button type="button" onClick={saveDefault} disabled={saving} className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-2.5 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:opacity-40">{saving ? "Saving…" : "Save folders"}</button></div>
           </section>
 
           <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">
@@ -566,6 +621,22 @@ export default function SettingsPage() {
 function displayName(model: string) {
   const clean = model.replace(/^hf:/, "").replace(/:latest$/, "").replaceAll("-", " ");
   return model.startsWith("hf:") ? `${clean} · Hugging Face` : clean;
+}
+
+function allModels(status: SystemStatus | null) {
+  const candidates = [...(status?.models ?? []), ...(status?.discoveredModels ?? []), ...(status?.huggingFaceModels ?? [])];
+  return [...new Map(candidates.map((model) => [model.name, model])).values()];
+}
+
+function modelOwnershipLabel(model: NonNullable<SystemStatus>["models"][number]) {
+  if (model.provider === "ollama") return "Ollama · locally managed";
+  const source = model.source?.replaceAll("-", " ") ?? "local folder";
+  const ownership = model.ownership === "kai-managed" ? "Kai Studio managed" : model.ownership === "manual" ? "Manually registered" : "User managed";
+  return `${ownership} · ${source}`;
+}
+
+function isRunnableModel(model: NonNullable<SystemStatus>["models"][number]) {
+  return model.provider === "ollama" || model.status === "available";
 }
 
 function formatBytes(bytes: number) {

@@ -46,7 +46,6 @@ const fallbackModelOptions = [
   { value: "gemma4:12b-mlx", label: "Gemma 4 12B", detail: "Quick" },
   { value: "gemma4:26b-mlx", label: "Gemma 4 26B", detail: "Balanced" },
   { value: "gemma4:31b-mlx", label: "Gemma 4 31B", detail: "Deep" },
-  { value: "hf:gemma4-26b-a4b-q4", label: "Gemma 4 26B A4B", detail: "Hugging Face" },
 ];
 
 export function StudioChat({
@@ -101,8 +100,10 @@ export function StudioChat({
           modelAssignments?: { chat?: string; coding?: string };
           longTermMemoryEnabled?: boolean;
         };
-        const status = await statusResponse.json() as { models?: Array<{ name: string }>; huggingFaceModels?: Array<{ name: string }> };
-        const installed = [...(status.models ?? []), ...(status.huggingFaceModels ?? [])].map((item) => ({ value: item.name, label: modelLabel(item.name), detail: item.name.startsWith("hf:") ? "Hugging Face" : "Local" }));
+        const status = await statusResponse.json() as { models?: Array<{ name: string; displayName?: string; provider?: string; status?: string }>; discoveredModels?: Array<{ name: string; displayName?: string; provider?: string; status?: string }>; huggingFaceModels?: Array<{ name: string; displayName?: string; provider?: string; status?: string }> };
+        const installed = [...(status.models ?? []), ...(status.discoveredModels ?? []), ...(status.huggingFaceModels ?? [])]
+          .filter((item, index, all) => all.findIndex((candidate) => candidate.name === item.name) === index)
+          .map((item) => ({ value: item.name, label: item.displayName ?? modelLabel(item.name), detail: item.provider === "ollama" ? "Ollama" : item.status === "available" ? "Local runtime" : "Local candidate" }));
         if (installed.length) setModelOptions(installed);
         const preferred = repositoryHandoff
           ? settings.modelAssignments?.coding

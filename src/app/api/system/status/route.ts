@@ -1,5 +1,7 @@
 import type { SystemStatus } from "@/types/settings";
-import { listHuggingFaceModels } from "@/lib/local-model-runtime";
+import { listManagedLocalModels, setManagedLocalModelRoots } from "@/lib/local-model-runtime";
+import { discoverLocalModels } from "@/lib/local-model-discovery";
+import { readSettings } from "@/lib/settings-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,12 +17,30 @@ type OllamaTagsResponse = {
 
 export async function GET() {
   const checkedAt = new Date().toISOString();
-  const huggingFaceModels = (await listHuggingFaceModels()).map((model) => ({
+  const settings = await readSettings();
+  await setManagedLocalModelRoots(settings.modelSearchRoots);
+  const [managedModels, discoveredModels] = await Promise.all([
+    listManagedLocalModels(),
+    discoverLocalModels({ extraRoots: settings.modelSearchRoots }),
+  ]);
+  const huggingFaceModels = managedModels.map((model) => ({
     name: model.id,
+    displayName: model.name,
     size: model.size,
     modifiedAt: checkedAt,
-    provider: "huggingface" as const,
+    provider: model.provider ?? "huggingface",
+    canonicalPath: model.canonicalPath,
+    status: model.status ?? "candidate",
+    statusReason: model.statusReason,
+    source: model.source as import("@/types/settings").LocalModel["source"],
+    ownership: model.ownership as import("@/types/settings").LocalModel["ownership"],
+    runtime: model.runtime as import("@/types/settings").LocalModel["runtime"],
+    family: model.family,
+    parameterClass: model.parameterClass,
+    quantization: model.quantization,
+    architecture: model.architecture,
   }));
+  const allDiscovered = [...new Map([...discoveredModels, ...huggingFaceModels].map((model) => [model.canonicalPath ?? model.name, model])).values()];
 
   try {
     const response = await fetch("http://127.0.0.1:11434/api/tags", {
@@ -42,6 +62,7 @@ export async function GET() {
       ollamaOnline: true,
       models,
       huggingFaceModels,
+      discoveredModels: allDiscovered,
       checkedAt,
     };
 
@@ -51,6 +72,7 @@ export async function GET() {
       ollamaOnline: false,
       models: [],
       huggingFaceModels,
+      discoveredModels: allDiscovered,
       checkedAt,
       error:
         error instanceof Error

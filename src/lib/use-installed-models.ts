@@ -6,7 +6,7 @@ import type { ModelAssignments, SystemStatus } from "@/types/settings";
 export type InstalledModelOption = { value: string; label: string };
 
 export function localModelLabel(name: string) {
-  if (name.startsWith("hf:")) return `${name.slice(3).replaceAll("-", " ")} · Hugging Face`;
+  if (name.startsWith("hf:") || name.startsWith("local:")) return `${name.slice(name.indexOf(":") + 1).replaceAll("-", " ")} · Local`;
   return name.replace(/:latest$/, "").replaceAll("-", " ");
 }
 
@@ -27,8 +27,8 @@ export function useInstalledModels(
         const settings = (await settingsResponse.json()) as {
           modelAssignments?: ModelAssignments;
         };
-        const discovered = [...status.models, ...(status.huggingFaceModels ?? [])]
-          .map((model) => ({ value: model.name, label: localModelLabel(model.name) }))
+        const discovered = [...status.models, ...(status.discoveredModels ?? []), ...(status.huggingFaceModels ?? [])]
+          .map((model) => ({ value: model.name, label: model.displayName ?? localModelLabel(model.name) }))
           .filter((model, index, all) => all.findIndex((candidate) => candidate.value === model.value) === index);
         const selected = settings.modelAssignments?.[assignment] ?? fallback;
         setAssignedModel(selected);

@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { app, BrowserWindow, dialog, powerSaveBlocker, session, shell } = require("electron");
 const { fork, spawn } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
+const os = require("node:os");
 const path = require("node:path");
 
 const PORT = 31415;
@@ -16,37 +18,71 @@ let llamaProcess;
 let activeHuggingFaceModel;
 let activeBuildMonitor;
 let activeBuildPowerBlocker;
+let registeredModelRoots = [];
 
-const huggingFaceModels = {
-  "hf:gemma4-26b-a4b-q4": {
-    name: "Gemma 4 26B A4B · Hugging Face",
-    model: "/Users/kai/Models/gemma4-mtp/Gemma4-26B-A4B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf",
-    projector: "/Users/kai/Models/gemma4-mtp/mmproj-Gemma4-26B-A4B-QAT-Uncensored-HauhauCS-Balanced-BF16.gguf",
-    draft: "/Users/kai/Models/gemma4-mtp/mtp-gemma-4-26B-A4B-it.gguf",
-  },
-};
+const managedLocalModels = new Map();
 
-function discoverHuggingFaceModels(root = "/Users/kai/Models", depth = 0) {
+function localModelId(modelPath) {
+  return `local:${crypto.createHash("sha256").update(fs.realpathSync(modelPath)).digest("hex").slice(0, 20)}`;
+}
+
+function defaultModelRoots() {
+  const home = os.homedir();
+  return [...new Set([path.join(home, "Models"), path.join(home, ".cache", "huggingface", "hub"), path.join(home, "Library", "Application Support", "Kai Studio", "models"), ...registeredModelRoots])];
+}
+
+function isSafeModelRoot(root) {
+  const resolved = path.resolve(root);
+  const home = path.resolve(os.homedir());
+  return resolved !== path.parse(resolved).root && resolved !== home && !resolved.split(path.sep).includes(".git");
+}
+
+function modelDisplayName(modelPath) {
+  return path.basename(modelPath, ".gguf").replace(/-00001-of-\d+$/i, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function modelMetadata(name) {
+  const normalized = name.toLowerCase();
+  const parameter = normalized.match(/(?:^|[^\d])(\d+(?:\.\d+)?)\s*b(?:[^a-z]|$)/i)?.[1];
+  return {
+    family: normalized.includes("qwen") ? "Qwen" : normalized.includes("gemma") ? "Gemma" : normalized.includes("llama") ? "Llama" : normalized.includes("mistral") ? "Mistral" : undefined,
+    parameterClass: parameter ? `${parameter}B` : undefined,
+    quantization: normalized.match(/(?:q\d(?:_[a-z0-9]+)?|[a-z]\d+bit|fp\d+|bf16|f16)/i)?.[0]?.toUpperCase(),
+    architecture: normalized.includes("moe") || normalized.includes("mtp") ? "moe" : "unknown",
+  };
+}
+
+function discoverLocalModels(root, depth = 0) {
   if (!fs.existsSync(root) || depth > 5) return;
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    const fullPath = path.join(root, entry.name);
+  const rootCanonical = fs.realpathSync(root);
+  for (const entry of fs.readdirSync(rootCanonical, { withFileTypes: true }).slice(0, 1_000)) {
+    const fullPath = path.join(rootCanonical, entry.name);
     if (entry.isDirectory()) {
-      discoverHuggingFaceModels(fullPath, depth + 1);
+      if (!entry.isSymbolicLink()) discoverLocalModels(fullPath, depth + 1);
       continue;
     }
-    if (!entry.name.toLowerCase().endsWith(".gguf") || /^(mmproj|mtp|draft)/i.test(entry.name)) continue;
-    if (Object.values(huggingFaceModels).some((definition) => definition.model === fullPath)) continue;
-    const base = path.basename(entry.name, ".gguf").replace(/-00001-of-\d+$/i, "");
-    let id = `hf:auto:${base.toLowerCase().replace(/[^a-z0-9.]+/g, "-").replace(/^-|-$/g, "")}`;
-    let suffix = 2;
-    while (huggingFaceModels[id] && huggingFaceModels[id].model !== fullPath) id = `${id}-${suffix++}`;
-    const siblings = fs.readdirSync(root);
+    if (entry.isSymbolicLink() || !entry.name.toLowerCase().endsWith(".gguf") || /^(mmproj|mtp|draft)/i.test(entry.name)) continue;
+    const canonicalPath = fs.realpathSync(fullPath);
+    if (!canonicalPath.startsWith(`${rootCanonical}${path.sep}`)) continue;
+    const id = localModelId(canonicalPath);
+    const siblings = fs.readdirSync(path.dirname(canonicalPath));
     const projector = siblings.find((name) => /^mmproj.*\.gguf$/i.test(name));
-    huggingFaceModels[id] = {
-      name: base.replaceAll("-", " "),
-      model: fullPath,
-      ...(projector ? { projector: path.join(root, projector) } : {}),
-    };
+    const draft = siblings.find((name) => /^(mtp|draft).*\.gguf$/i.test(name));
+    const name = modelDisplayName(canonicalPath);
+    managedLocalModels.set(id, {
+      id, name, model: canonicalPath, canonicalPath, size: fs.statSync(canonicalPath).size,
+      ...(projector ? { projector: path.join(path.dirname(canonicalPath), projector) } : {}),
+      ...(draft ? { draft: path.join(path.dirname(canonicalPath), draft) } : {}),
+      source: "user-managed-local", ownership: "user-managed", runtime: "llama.cpp", status: "candidate",
+      statusReason: "Ready for optional local llama.cpp validation.", ...modelMetadata(name),
+    });
+  }
+}
+
+function refreshManagedLocalModels() {
+  managedLocalModels.clear();
+  for (const root of defaultModelRoots()) {
+    try { discoverLocalModels(root); } catch (error) { console.error("Local model discovery skipped", root, error.message); }
   }
 }
 
@@ -128,7 +164,7 @@ function waitForHttp(url, timeoutMs = 180_000) {
       });
       const retry = () => {
         if (Date.now() - startedAt >= timeoutMs) {
-          reject(new Error("The local Hugging Face model took too long to load."));
+          reject(new Error("The selected local model took too long to load."));
           return;
         }
         setTimeout(check, 500);
@@ -149,10 +185,10 @@ function llamaServerPath() {
 }
 
 async function ensureHuggingFaceModel(modelId) {
-  discoverHuggingFaceModels();
-  const definition = huggingFaceModels[modelId];
+  refreshManagedLocalModels();
+  const definition = managedLocalModels.get(modelId);
   if (!definition || !fs.existsSync(definition.model)) {
-    throw new Error("That Hugging Face model is not installed on this Mac.");
+    throw new Error("That locally discovered model is not available to Kai Studio.");
   }
   if (activeHuggingFaceModel === modelId && llamaProcess?.exitCode === null) return;
 
@@ -162,7 +198,7 @@ async function ensureHuggingFaceModel(modelId) {
 
   const executable = llamaServerPath();
   if (!executable) {
-    throw new Error("Kai Studio's embedded Hugging Face runtime is unavailable.");
+    throw new Error("Kai Studio's managed llama.cpp runtime is unavailable.");
   }
 
   const args = [
@@ -191,18 +227,21 @@ async function ensureHuggingFaceModel(modelId) {
   });
   await waitForHttp(`http://127.0.0.1:${LLAMA_PORT}/health`);
   activeHuggingFaceModel = modelId;
+  definition.status = "available";
+  definition.statusReason = "Loaded successfully by Kai Studio's local llama.cpp runtime.";
 }
 
 function startModelControlServer() {
   modelControlServer = http.createServer(async (request, response) => {
     response.setHeader("Content-Type", "application/json");
     if (request.method === "GET" && request.url === "/models") {
-      discoverHuggingFaceModels();
-      const models = Object.entries(huggingFaceModels).flatMap(([id, definition]) =>
-        fs.existsSync(definition.model)
-          ? [{ id, name: definition.name, size: fs.statSync(definition.model).size }]
-          : [],
-      );
+      refreshManagedLocalModels();
+      const models = [...managedLocalModels.values()].filter((definition) => fs.existsSync(definition.model)).map((definition) => ({
+        id: definition.id, name: definition.name, size: definition.size, canonicalPath: definition.canonicalPath,
+        source: definition.source, ownership: definition.ownership, runtime: definition.runtime, status: definition.status,
+        statusReason: definition.statusReason, family: definition.family, parameterClass: definition.parameterClass,
+        quantization: definition.quantization, architecture: definition.architecture, provider: "huggingface",
+      }));
       response.end(JSON.stringify({ models, activeModel: activeHuggingFaceModel ?? null }));
       return;
     }
@@ -216,6 +255,23 @@ function startModelControlServer() {
           response.end(JSON.stringify({ ready: true, port: LLAMA_PORT }));
         } catch (error) {
           response.statusCode = 503;
+          response.end(JSON.stringify({ error: error.message }));
+        }
+      });
+      return;
+    }
+    if (request.method === "POST" && request.url === "/roots") {
+      let body = "";
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        try {
+          const { roots } = JSON.parse(body);
+          if (!Array.isArray(roots) || roots.some((root) => typeof root !== "string" || root.length > 4096 || !isSafeModelRoot(root))) throw new Error("Choose dedicated local model folders only.");
+          registeredModelRoots = [...new Set(roots.map((root) => path.resolve(root.trim())).filter(Boolean))];
+          refreshManagedLocalModels();
+          response.end(JSON.stringify({ roots: registeredModelRoots }));
+        } catch (error) {
+          response.statusCode = 400;
           response.end(JSON.stringify({ error: error.message }));
         }
       });

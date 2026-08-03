@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { KaiStudioSettings } from "@/types/settings";
+import { defaultModelAssignments } from "@/lib/models/roles";
 
 const dataDirectory =
   process.env.KAI_STUDIO_DATA_DIR ?? path.join(process.cwd(), ".promptdeck");
@@ -9,33 +10,19 @@ const temporaryFile = path.join(dataDirectory, "settings.tmp.json");
 
 const defaultSettings: KaiStudioSettings = {
   defaultModel: "gemma4:12b-mlx",
-  modelAssignments: {
-    chat: "gemma4:26b-mlx",
-    meeting: "gemma4:12b-mlx",
-    editorial: "gemma4:12b-mlx",
-    account: "gemma4:26b-mlx",
-    general: "gemma4:26b-mlx",
-    coding: "qwen3.6:27b-mtp-q4_K_M",
-    security: "gemma4:31b-mlx",
-    vision: "glm-ocr",
-    diagnostics: "gemma4:31b-mlx",
-    diagnosticsParser: "gemma4:12b-mlx",
-    progressAssessor: "gemma4:12b-mlx",
-    orchestration: "gemini-2.5-pro",
-    review: "gemma4:31b-mlx",
-    embedding: "local-hash",
-  },
+  modelAssignments: defaultModelAssignments,
   longTermMemoryEnabled: true,
   memoryDebugEnabled: false,
   codingContextLimit: 32768,
   codingBudgetOverrideMinutes: null,
+  modelSearchRoots: [],
 };
 
 export async function readSettings(): Promise<KaiStudioSettings> {
   try {
     const contents = await readFile(settingsFile, "utf8");
     const saved = JSON.parse(contents) as Partial<KaiStudioSettings>;
-    return { ...defaultSettings, ...saved, modelAssignments: { ...defaultSettings.modelAssignments, ...(saved.modelAssignments ?? {}) } };
+    return { ...defaultSettings, ...saved, modelAssignments: { ...defaultSettings.modelAssignments, ...(saved.modelAssignments ?? {}) }, modelSearchRoots: Array.isArray(saved.modelSearchRoots) ? saved.modelSearchRoots.filter((root): root is string => typeof root === "string") : [] };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultSettings;
     throw error;
