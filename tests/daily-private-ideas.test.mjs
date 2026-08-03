@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compactSeedSchema, expectedIdeaCount, providerSchema, selectSeeds, validateIdea, validateIdeas } from "../scripts/generate-daily-private-ideas.mjs";
+import { canonicalizeStructuralIds, compactSeedSchema, expectedIdeaCount, providerSchema, selectSeeds, validateIdea, validateIdeas } from "../scripts/generate-daily-private-ideas.mjs";
 import { documentsFor, validateIdeas as validateCreatedIdeas } from "../scripts/create-daily-private-ideas.mjs";
 
 const detail = (text) => `${text}. This is concrete enough for a coding agent to implement and verify without making an unstated product decision.`;
@@ -94,6 +94,16 @@ test("security, permission, and recovery contracts follow the schema list shape"
   const idea = validIdea();
   idea.security_and_privacy = detail("A string where the authoritative schema requires an explicit list");
   assert.throws(() => validateIdea(idea, 0), /security_and_privacy.*list/i);
+});
+
+test("mechanical missing scoring identifiers are derived from provider-authored names", () => {
+  const idea = validIdea();
+  delete idea.scoring_and_decision_logic.dimensions[0].id;
+  delete idea.evaluation_rubric.dimensions[0].id;
+  const canonical = canonicalizeStructuralIds(idea);
+  assert.equal(canonical.scoring_and_decision_logic.dimensions[0].id, "evidence-completeness");
+  assert.equal(canonical.evaluation_rubric.dimensions[0].id, "evidence-completeness");
+  assert.equal(validateIdea(canonical, 0).application_name, "Local Evidence Ledger");
 });
 
 test("vague mechanisms and missing scoring detail are rejected", () => {

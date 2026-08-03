@@ -109,6 +109,31 @@ function parseJsonOutput(text) {
   return JSON.parse(fenced ? fenced[1] : trimmed);
 }
 
+function stableIdentifier(value, fallback) {
+  const slug = String(value || fallback)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return slug.length >= 2 ? slug : fallback;
+}
+
+// Providers occasionally omit a mechanical identifier while still supplying
+// the canonical human-readable name. Deriving that identifier is safe because
+// it adds no product behaviour, prose, or authority; all semantic content
+// remains provider-authored and is validated immediately afterwards.
+export function canonicalizeStructuralIds(idea) {
+  if (!idea || typeof idea !== "object") return idea;
+  const copy = structuredClone(idea);
+  for (const [index, dimension] of (copy.scoring_and_decision_logic?.dimensions ?? []).entries()) {
+    if (!isText(dimension?.id, 2)) dimension.id = stableIdentifier(dimension?.name, `score-${index + 1}`);
+  }
+  for (const [index, dimension] of (copy.evaluation_rubric?.dimensions ?? []).entries()) {
+    if (!isText(dimension?.id, 2)) dimension.id = stableIdentifier(dimension?.name, `rubric-${index + 1}`);
+  }
+  return copy;
+}
+
 function isText(value, minimum = 1) { return typeof value === "string" && value.trim().length >= minimum; }
 function isList(value, minimum = 1) { return Array.isArray(value) && value.length >= minimum && value.every((entry) => isText(entry)); }
 function notApplicable(value) { return value?.applicable === false && isText(value.reason, 12); }
@@ -428,7 +453,7 @@ async function main() {
     let lastError;
     let candidateText = expanded.text;
     for (let attempt = 0; attempt <= 1; attempt += 1) {
-      try { validated = validateIdea(parseJsonOutput(candidateText), index); break; }
+      try { validated = validateIdea(canonicalizeStructuralIds(parseJsonOutput(candidateText)), index); break; }
       catch (error) {
         lastError = error;
         if (attempt === 1) break;
