@@ -5,6 +5,7 @@ import { HybridMemoryRetriever } from "@/lib/memory/retriever";
 import { readSettings } from "@/lib/settings-store";
 import { createScopedHashEmbedder } from "@/lib/retrieval/embedding-provider";
 import { embeddingIdentity } from "@/lib/retrieval/identity";
+import type { EmbeddingRuntimeDescriptor } from "@/lib/embedding-runtime";
 
 const index = new SqliteMemoryIndex(kaiLoreRoot, memoryIndexFile);
 export const longTermMemoryRetriever = new HybridMemoryRetriever(index);
@@ -18,7 +19,13 @@ export async function kaiLoreMemoryRetriever() {
   const existing = configuredRetrievers.get(key);
   if (existing) return existing;
   const provider = createScopedHashEmbedder(embeddingIdentity("kailore", key));
-  const retriever = new HybridMemoryRetriever(new SqliteMemoryIndex(kaiLoreRoot, memoryIndexFile, { embedding: provider }));
+  const runtime: EmbeddingRuntimeDescriptor = {
+    domain: "kailore", role: "kailore.embedding", modelId: key, modelTag: key,
+    ownership: key.startsWith("gemma") || key.includes(":") ? "shared-ollama" : "unsupported",
+    runtime: key.includes(":") ? "ollama" : "external",
+    policy: settings.embeddingRuntime.kaiLore,
+  };
+  const retriever = new HybridMemoryRetriever(new SqliteMemoryIndex(kaiLoreRoot, memoryIndexFile, { embedding: provider }), runtime);
   configuredRetrievers.set(key, retriever);
   return retriever;
 }

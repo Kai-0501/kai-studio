@@ -19,3 +19,11 @@ Retrieval combines exact lexical matching for paths, identifiers, tests, and con
 The Settings page shows each role assignment, generation identity, status, and a KaiLore reindex action. Coding reindexing occurs only inside its scoped checkout. Diagnostics are local and disclose corpus counts, vector availability, selected evidence, stale drops, and index failures without exposing unrelated content.
 
 Embedding adapters are procured through an explicit compatibility contract: stable model identity, local runtime, documented dimensions and normalisation, query/document formatting, benchmarked quality and latency, migration/rebuild behaviour, and no unreviewed network transfer. Human approval is required before changing model assignments or dependency policy.
+
+## Embedding runtime lifecycle
+
+KaiLore and coding embeddings use the shared provider-neutral `EmbeddingRuntimeManager`. A retrieval operation acquires a scoped lease keyed by domain, model, and revision; overlapping requests reuse the same residency and only the final release can schedule idle eviction. No embedding runtime is loaded at application startup.
+
+The manager records ownership (`kai-managed`, `shared-ollama`, `user-managed-external`, or `unsupported`), lifecycle, refcount, last-use time, unload deadline, and the last health error. KaiLore defaults to a short 120-second idle retention. Coding defaults to 300 seconds and can remain warm across planner/implementer/reviewer transitions. Settings bound retention and can retain a runtime during indexing. Memory-pressure eviction only targets idle embedding leases and never active leases or unrelated model roles.
+
+For shared Ollama models, load and unload operations are exact-tag scoped. Unload requests use Ollama's `keep_alive: 0` and never issue a broad runtime shutdown. External or unsupported runtimes are observed but never forcibly unloaded. Status is available through `/api/retrieval/status` and `/api/retrieval/runtime`.

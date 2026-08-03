@@ -97,10 +97,13 @@ export async function POST(request: NextRequest) {
         // indexes the current scoped checkout only after the approved initial
         // files exist, then rehydrates exact current lines before model use.
         const retrieval = await codingRetrievalIndex(root, `${build.owner}/${build.repo}`);
-        const indexing = await retrieval.sync({ worktreeId: build.id });
-        const retrievedEvidence = await retrieval.retrieve(build.task || build.summary, {
-          role: "implementer",
-          contextLimit: settings.codingContextLimit,
+        const { indexing, retrievedEvidence } = await retrieval.withLease(async () => {
+          const indexing = await retrieval.sync({ worktreeId: build.id });
+          const retrievedEvidence = await retrieval.retrieve(build.task || build.summary, {
+            role: "implementer",
+            contextLimit: settings.codingContextLimit,
+          });
+          return { indexing, retrievedEvidence };
         });
         const codingEvidence = retrievedEvidence.selected.map((candidate) =>
           `SOURCE: ${candidate.path}:${candidate.startLine}-${candidate.endLine} (${candidate.relationship ?? "primary"}; ${candidate.current ? "current" : "stale"})\n${candidate.exactContent ?? ""}`,

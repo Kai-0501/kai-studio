@@ -28,6 +28,7 @@ export async function PUT(request: Request) {
     codingContextLimit?: unknown;
     codingBudgetOverrideMinutes?: unknown;
     modelSearchRoots?: unknown;
+    embeddingRuntime?: unknown;
   };
 
   if (
@@ -44,6 +45,7 @@ export async function PUT(request: Request) {
   if (body.modelSearchRoots !== undefined && (!Array.isArray(body.modelSearchRoots) || body.modelSearchRoots.some((root) => typeof root !== "string" || !root.trim() || root.length > 4096 || !isSafeModelRoot(root)))) {
     return Response.json({ error: "Model folders must be valid local paths." }, { status: 400 });
   }
+  if (body.embeddingRuntime !== undefined && (typeof body.embeddingRuntime !== "object" || body.embeddingRuntime === null)) return Response.json({ error: "Embedding runtime settings are invalid." }, { status: 400 });
 
   if (body.codingContextLimit !== undefined && body.codingContextLimit !== 16384 && body.codingContextLimit !== 32768) {
     return Response.json({ error: "Coding context must be 16K or 32K." }, { status: 400 });
@@ -85,5 +87,6 @@ export async function PUT(request: Request) {
     ...(body.codingContextLimit === 16384 || body.codingContextLimit === 32768 ? { codingContextLimit: body.codingContextLimit } : {}),
     ...(body.codingBudgetOverrideMinutes === null || typeof body.codingBudgetOverrideMinutes === "number" ? { codingBudgetOverrideMinutes: body.codingBudgetOverrideMinutes } : {}),
     ...(Array.isArray(body.modelSearchRoots) ? { modelSearchRoots: [...new Set(body.modelSearchRoots.map((root) => path.resolve(root.trim())))] } : {}),
+    ...(body.embeddingRuntime && typeof body.embeddingRuntime === "object" ? { embeddingRuntime: body.embeddingRuntime as import("@/types/settings").EmbeddingRuntimeSettings } : {}),
   }));
 }

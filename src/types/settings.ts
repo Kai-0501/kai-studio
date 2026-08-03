@@ -6,6 +6,20 @@ export type KaiStudioSettings = {
   codingContextLimit: 16384 | 32768;
   codingBudgetOverrideMinutes: number | null;
   modelSearchRoots: string[];
+  embeddingRuntime: EmbeddingRuntimeSettings;
+};
+
+export type EmbeddingRuntimeSettings = {
+  kaiLore: EmbeddingRuntimePolicy;
+  coding: EmbeddingRuntimePolicy;
+};
+
+export type EmbeddingRuntimePolicy = {
+  idleTimeoutSeconds: number;
+  minimumWarmSeconds: number;
+  retainDuringIndexing: boolean;
+  retainAcrossTransitions: boolean;
+  evictOnMemoryPressure: boolean;
 };
 
 export type ModelAssignments = {

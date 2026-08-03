@@ -31,6 +31,7 @@ export default function SettingsPage() {
   const [savingMemory, setSavingMemory] = useState(false);
   const [performance, setPerformance] = useState<GenerationPerformance[]>([]);
   const [modelSearchRoots, setModelSearchRoots] = useState<string[]>([]);
+  const [embeddingRuntime, setEmbeddingRuntime] = useState<KaiStudioSettings["embeddingRuntime"] | null>(null);
   const [modelRootDraft, setModelRootDraft] = useState("");
   const [validatingModel, setValidatingModel] = useState<string | null>(null);
   const [retrieval, setRetrieval] = useState<{ kaiLore: { model: string; status: string; message: string; generation?: { dimensions?: number; model_revision?: string } | null }; coding: { model: string; status: string; message: string; hybridEnabled: boolean; reranker: string } } | null>(null);
@@ -61,6 +62,7 @@ export default function SettingsPage() {
       setCodingContextLimit(settings.codingContextLimit);
       setCodingBudgetOverrideMinutes(settings.codingBudgetOverrideMinutes);
       setModelSearchRoots(settings.modelSearchRoots ?? []);
+      setEmbeddingRuntime(settings.embeddingRuntime);
       const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
       setMemory(currentMemory);
       setMemoryDraft(currentMemory.content);
@@ -94,6 +96,7 @@ export default function SettingsPage() {
         setCodingContextLimit(settings.codingContextLimit);
         setCodingBudgetOverrideMinutes(settings.codingBudgetOverrideMinutes);
         setModelSearchRoots(settings.modelSearchRoots ?? []);
+        setEmbeddingRuntime(settings.embeddingRuntime);
         const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
         setMemory(currentMemory);
         setMemoryDraft(currentMemory.content);
@@ -121,6 +124,7 @@ export default function SettingsPage() {
         codingContextLimit,
         codingBudgetOverrideMinutes,
         modelSearchRoots,
+        ...(embeddingRuntime ? { embeddingRuntime } : {}),
       }),
     });
 
@@ -442,6 +446,25 @@ export default function SettingsPage() {
                 <p className="mt-2 text-xs text-slate-600">Hybrid retrieval {retrieval?.coding.hybridEnabled ? "enabled" : "unavailable"} · Reranker: {retrieval?.coding.reranker ?? "not configured"}</p>
               </div>
             </div>
+          </section>
+
+          <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">
+            <h2 className="font-semibold">Embedding runtime lifecycle</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Embedding runtimes load only when their workflow needs them, stay warm briefly for nearby work, and unload independently without touching chat or coding models.</p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              {(["kaiLore", "coding"] as const).map((domain) => {
+                const policy = embeddingRuntime?.[domain];
+                if (!policy) return null;
+                return <div key={domain} className="rounded-xl border border-white/10 bg-[#0b0f18] p-4">
+                  <p className="text-sm font-medium">{domain === "kaiLore" ? "KaiLore Embedding" : "Coding Embedding"}</p>
+                  <label className="mt-3 block text-xs text-slate-500">Idle retention (seconds)
+                    <input type="number" min={30} max={900} value={policy.idleTimeoutSeconds} onChange={(event) => setEmbeddingRuntime((current) => current ? { ...current, [domain]: { ...current[domain], idleTimeoutSeconds: Math.min(900, Math.max(30, Number(event.target.value) || 30)) } } : current)} className="mt-1 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2 text-sm text-slate-200" />
+                  </label>
+                  <p className="mt-3 text-xs text-slate-500">{domain === "coding" ? "Retained across planner, implementer, and reviewer transitions." : "Retained while indexing and reindexing."}</p>
+                </div>;
+              })}
+            </div>
+            <div className="mt-5 flex justify-end border-t border-white/10 pt-5"><button type="button" onClick={saveDefault} disabled={saving || !embeddingRuntime} className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-2.5 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:opacity-40">{saving ? "Saving…" : "Save runtime settings"}</button></div>
           </section>
 
           <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">

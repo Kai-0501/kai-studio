@@ -14,6 +14,7 @@ import {
   SqliteMemoryIndex,
 } from "@/lib/memory/index-store";
 import { denseCosine } from "@/lib/memory/embeddings";
+import { withEmbeddingLease, type EmbeddingRuntimeDescriptor } from "@/lib/embedding-runtime";
 
 export interface MemoryRetriever {
   retrieve(
@@ -59,12 +60,22 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     skippedFiles: 0,
   };
   private readonly index: SqliteMemoryIndex;
+  private readonly runtime?: EmbeddingRuntimeDescriptor;
 
-  constructor(index: SqliteMemoryIndex) {
+  constructor(index: SqliteMemoryIndex, runtime?: EmbeddingRuntimeDescriptor) {
     this.index = index;
+    this.runtime = runtime;
   }
 
   async retrieve(
+    query: string,
+    overrides: Partial<MemoryRetrievalOptions> = {},
+  ): Promise<MemoryRetrievalReport> {
+    if (this.runtime) return withEmbeddingLease(this.runtime, () => this.retrieveInternal(query, overrides));
+    return this.retrieveInternal(query, overrides);
+  }
+
+  private async retrieveInternal(
     query: string,
     overrides: Partial<MemoryRetrievalOptions> = {},
   ): Promise<MemoryRetrievalReport> {
@@ -163,6 +174,11 @@ export class HybridMemoryRetriever implements MemoryRetriever {
   }
 
   async reindex() {
+    if (this.runtime) return withEmbeddingLease(this.runtime, () => this.reindexInternal());
+    return this.reindexInternal();
+  }
+
+  private async reindexInternal() {
     this.resultCache.clear();
     this.lastStats = await this.index.sync();
     return this.lastStats;
