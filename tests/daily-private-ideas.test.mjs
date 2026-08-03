@@ -93,13 +93,13 @@ test("Gemini structured output receives the compatible response schema", () => {
   }
 });
 
-test("Gemini candidate transport uses primitive items instead of an incompatible nested grammar", () => {
+test("Gemini candidate transport uses one primitive field instead of an incompatible nested grammar", () => {
   const previousKey = process.env.AI_API_KEY;
   const previousModel = process.env.AI_MODEL;
   process.env.AI_API_KEY = "test-key";
   process.env.AI_MODEL = "gemini-test";
   try {
-    const candidateTransport = { type: "object", properties: { ideas: { type: "array", items: { type: "string" } } }, required: ["ideas"] };
+    const candidateTransport = { type: "object", properties: { ideas: { type: "string" } }, required: ["ideas"] };
     const request = providerRequest("Return concise candidates", compactSeedSchema(3), "gemini", 4096, candidateTransport);
     const payload = JSON.parse(request.init.body);
     assert.equal(payload.generationConfig.responseMimeType, "application/json");
