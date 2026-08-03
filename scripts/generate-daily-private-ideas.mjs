@@ -1,8 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 const provider = process.env.AI_PROVIDER || "gemini";
-const apiKey = process.env.AI_API_KEY;
-const model = process.env.AI_MODEL;
 const REQUIRED_TEST_LEVELS = ["unit", "integration", "end-to-end", "security", "recovery", "performance"];
 const VAGUE_MECHANISMS = [
   "use an ai orchestrator", "add semantic analysis", "connect to a database", "run validation",
@@ -61,18 +59,23 @@ export function providerRequest(prompt, schema, targetProvider = provider) {
   const contract = `${prompt}\n\n# Required JSON contract\n${JSON.stringify(responseSchema)}`;
   if (targetProvider === "gemini") {
     return {
-      url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(required(model, "AI_MODEL"))}:generateContent`,
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(required(process.env.AI_MODEL, "AI_MODEL"))}:generateContent`,
       init: {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": required(apiKey, "GEMINI_API_KEY") },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": required(process.env.AI_API_KEY, "GEMINI_API_KEY") },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: systemInstruction() }] },
           contents: [{ role: "user", parts: [{ text: contract }] }],
-          // Gemini's public endpoint has a narrower response-schema subset than
-          // the provider-neutral contract. JSON mode plus the embedded contract
-          // keeps output machine-readable; the authoritative schema and semantic
-          // validation run locally before anything can be created.
-          generationConfig: { maxOutputTokens: 32768, responseMimeType: "application/json" },
+          // Gemini's public endpoint accepts a narrower response-schema subset
+          // than the provider-neutral contract, so `providerSchema` projects it
+          // first. Supplying that compatible schema gives the provider a JSON
+          // grammar to follow; the authoritative local schema and semantic
+          // validator still decide whether a repository may be created.
+          generationConfig: {
+            maxOutputTokens: 32768,
+            responseMimeType: "application/json",
+            responseSchema,
+          },
         }),
       },
     };
@@ -81,9 +84,9 @@ export function providerRequest(prompt, schema, targetProvider = provider) {
     url: `${required(process.env.AI_BASE_URL, "AI_BASE_URL").replace(/\/$/, "")}/chat/completions`,
     init: {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${required(apiKey, "AI_API_KEY")}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${required(process.env.AI_API_KEY, "AI_API_KEY")}` },
       body: JSON.stringify({
-        model: required(model, "AI_MODEL"),
+        model: required(process.env.AI_MODEL, "AI_MODEL"),
         messages: [{ role: "system", content: systemInstruction() }, { role: "user", content: contract }],
         response_format: { type: "json_object" },
       }),

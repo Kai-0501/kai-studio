@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canonicalizeStructuralIds, compactSeedSchema, expectedIdeaCount, providerSchema, selectSeeds, validateIdea, validateIdeas } from "../scripts/generate-daily-private-ideas.mjs";
+import { canonicalizeStructuralIds, compactSeedSchema, expectedIdeaCount, providerRequest, providerSchema, selectSeeds, validateIdea, validateIdeas } from "../scripts/generate-daily-private-ideas.mjs";
 import { documentsFor, validateIdeas as validateCreatedIdeas } from "../scripts/create-daily-private-ideas.mjs";
 
 const detail = (text) => `${text}. This is concrete enough for a coding agent to implement and verify without making an unstated product decision.`;
@@ -72,6 +72,22 @@ test("Gemini receives a compatible response-schema projection while local schema
   assert.equal(gemini.minProperties, undefined);
   assert.equal(gemini.properties.nested.minProperties, undefined);
   assert.equal(gemini.properties.nested.additionalProperties, undefined);
+});
+
+test("Gemini structured output receives the compatible response schema", () => {
+  const previousKey = process.env.AI_API_KEY;
+  const previousModel = process.env.AI_MODEL;
+  process.env.AI_API_KEY = "test-key";
+  process.env.AI_MODEL = "gemini-test";
+  try {
+    const request = providerRequest("Return one object", { type: "object", minProperties: 1, properties: { name: { type: "string" } } }, "gemini");
+    const payload = JSON.parse(request.init.body);
+    assert.equal(payload.generationConfig.responseMimeType, "application/json");
+    assert.deepEqual(payload.generationConfig.responseSchema, { type: "object", properties: { name: { type: "string" } } });
+  } finally {
+    if (previousKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = previousKey;
+    if (previousModel === undefined) delete process.env.AI_MODEL; else process.env.AI_MODEL = previousModel;
+  }
 });
 
 
