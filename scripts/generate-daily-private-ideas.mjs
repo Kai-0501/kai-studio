@@ -66,6 +66,16 @@ function geminiTransportSchema(schema) {
     const resolved = resolve(node);
     const type = Array.isArray(resolved?.type) ? resolved.type.find((value) => value !== "null") : resolved?.type;
     if (!type) return null;
+    if (type === "object") {
+      const properties = Object.fromEntries(
+        Object.entries(resolved.properties || {})
+          .map(([name, value]) => [name, property(value)])
+          .filter(([, value]) => value),
+      );
+      if (Object.keys(properties).length === 0) return { type };
+      const required = (resolved.required || []).filter((name) => properties[name]);
+      return { type, properties, required };
+    }
     if (type !== "array") return { type };
     // The legacy REST endpoint requires an item schema for every array. Keep
     // this intentionally shallow—full item contracts are validated locally.
