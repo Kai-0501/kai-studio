@@ -82,10 +82,10 @@ test("Gemini structured output receives the compatible response schema", () => {
   process.env.AI_API_KEY = "test-key";
   process.env.AI_MODEL = "gemini-test";
   try {
-    const request = providerRequest("Return one object", { type: "object", minProperties: 1, properties: { name: { type: "string" }, ideas: { type: "array", items: { type: "object" } } } }, "gemini");
+    const request = providerRequest("Return one object", { type: "object", minProperties: 1, properties: { name: { type: "string" }, ideas: { type: "array", minItems: 1, maxItems: 1, items: { type: "object" } } } }, "gemini");
     const payload = JSON.parse(request.init.body);
     assert.equal(payload.generationConfig.responseMimeType, "application/json");
-    assert.deepEqual(payload.generationConfig.responseSchema, { type: "object", properties: { name: { type: "string" }, ideas: { type: "array", items: { type: "object" } } }, required: ["name", "ideas"] });
+    assert.deepEqual(payload.generationConfig.responseSchema, { type: "object", properties: { name: { type: "string" }, ideas: { type: "array", minItems: 1, maxItems: 1, items: { type: "object" } } }, required: ["name", "ideas"] });
   } finally {
     if (previousKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = previousKey;
     if (previousModel === undefined) delete process.env.AI_MODEL; else process.env.AI_MODEL = previousModel;
