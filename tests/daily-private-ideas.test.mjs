@@ -87,7 +87,7 @@ test("candidate filtering happens before expansion and keeps distinct greenfield
 test("incomplete technical-sales-style specifications are rejected", () => {
   const idea = validIdea({ application_name: "Technical Sales Pitch Architect", repository_slug: "technical-sales-pitch-architect" });
   idea.domain_model.entities = [];
-  assert.throws(() => validateIdea(idea, 0), /domain entities/);
+  assert.throws(() => validateIdea(idea, 0), /domain entity/);
 });
 
 test("security, permission, and recovery contracts follow the schema list shape", () => {

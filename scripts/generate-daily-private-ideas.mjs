@@ -169,7 +169,12 @@ function noFiller(values, label) {
 }
 
 function validateDomainModel(domainModel, label) {
-  if (!Array.isArray(domainModel?.entities) || domainModel.entities.length < 2) throw new Error(`${label} needs at least two MVP domain entities.`);
+  // A useful smallest experiment can legitimately centre on one durable domain
+  // entity (for example, a local timer or a single ledger record). The
+  // structural contract intentionally allows one; quality comes from the
+  // complete entity/interface contract below, not from inventing a ceremonial
+  // second entity just to satisfy a counter.
+  if (!Array.isArray(domainModel?.entities) || domainModel.entities.length < 1) throw new Error(`${label} needs at least one concrete MVP domain entity.`);
   for (const entity of domainModel.entities) {
     expectText(entity, ["name"], `${label} domain entity`, 3);
     expectText(entity, ["responsibility", "lifecycle", "persistence_location"], `${label} domain entity`, 10);
