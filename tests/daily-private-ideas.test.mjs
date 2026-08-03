@@ -102,6 +102,13 @@ test("candidate filtering happens before expansion and keeps distinct greenfield
   assert.equal(selectSeeds(candidates, 2).length, 2);
 });
 
+test("candidate filtering reports field-level reasons when a candidate is too thin", () => {
+  assert.throws(
+    () => selectSeeds([{ application_name: "Thin candidate", repository_slug: "thin-candidate", product_definition: "Too brief", problem: "Too brief", target_user: "User", smallest_experiment: "Too brief" }], 1),
+    /insufficient product_definition, problem, target_user, smallest_experiment/,
+  );
+});
+
 test("incomplete technical-sales-style specifications are rejected", () => {
   const idea = validIdea({ application_name: "Technical Sales Pitch Architect", repository_slug: "technical-sales-pitch-architect" });
   idea.domain_model.entities = [];

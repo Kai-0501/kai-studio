@@ -445,20 +445,35 @@ export function compactSeedSchema(count = expectedIdeaCount()) {
 export function selectSeeds(seeds, expectedCount) {
   if (!Array.isArray(seeds) || seeds.length < expectedCount) throw new Error(`Candidate stage needs at least ${expectedCount} candidates before expansion.`);
   const selected = [];
+  const rejected = [];
   for (const seed of seeds) {
-    if (!isText(seed?.application_name, 8) || !isText(seed?.repository_slug, 3) || !isText(seed?.product_definition, 32) || !isText(seed?.problem, 24) || !isText(seed?.target_user, 18) || !isText(seed?.smallest_experiment, 18)) continue;
+    const requiredFields = [
+      ["application_name", 8], ["repository_slug", 3], ["product_definition", 32],
+      ["problem", 24], ["target_user", 18], ["smallest_experiment", 18],
+    ];
+    const missing = requiredFields.filter(([field, minimum]) => !isText(seed?.[field], minimum)).map(([field]) => field);
+    if (missing.length > 0) {
+      rejected.push(`${seed?.repository_slug || "candidate"}: insufficient ${missing.join(", ")}`);
+      continue;
+    }
     const text = visibleText(seed);
-    if (/kai\s*studio|plugin|extension|generic ai wrapper|chatbot wrapper/.test(text)) continue;
+    if (/kai\s*studio|plugin|extension|generic ai wrapper|chatbot wrapper/.test(text)) {
+      rejected.push(`${seed.repository_slug}: not a standalone greenfield application`);
+      continue;
+    }
     const tokens = new Set(text.split(/[^a-z0-9]+/).filter((token) => token.length > 4));
     if (selected.some((existing) => {
       const comparison = new Set(visibleText(existing).split(/[^a-z0-9]+/).filter((token) => token.length > 4));
       const overlap = [...tokens].filter((token) => comparison.has(token)).length / Math.max(1, Math.min(tokens.size, comparison.size));
       return overlap > 0.72;
-    })) continue;
+    })) {
+      rejected.push(`${seed.repository_slug}: semantically duplicates another candidate`);
+      continue;
+    }
     selected.push(seed);
     if (selected.length === expectedCount) break;
   }
-  if (selected.length !== expectedCount) throw new Error(`Candidate filtering produced ${selected.length} viable ideas; expected ${expectedCount}.`);
+  if (selected.length !== expectedCount) throw new Error(`Candidate filtering produced ${selected.length} viable ideas; expected ${expectedCount}. Rejections: ${rejected.join("; ") || "none recorded"}`);
   return selected;
 }
 
