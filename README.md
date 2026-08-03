@@ -15,7 +15,7 @@ outputs, and memory stay local.
 - **Desktop chat** with automatically discovered local models from Ollama and
   Hugging Face-compatible runtimes
 - **Temporary chats** that use memory without adding history
-- **Tiered KaiLore memory** with human-editable Markdown records and local
+- **Tiered local memory** with human-editable Markdown records and local
   hybrid retrieval
 - **Local dictation** using Parakeet TDT 0.6B v2
 - **Local image generation** through Z-Image Turbo
@@ -28,7 +28,7 @@ outputs, and memory stay local.
   routing, fail-closed structured verdicts, and Gemma fallback
 - **Kai Agent** for direct user-to-plan-to-approved-coding handoffs
 - **Greenfield Workspace** with bounded templates and filesystem protections
-- **KaiLore Phase 2A** with pluggable local dense embeddings and sparse fallback
+- **Memory Phase 2A** with pluggable local dense embeddings and sparse fallback
 - **Persistent background build sessions** that survive navigation and keep
   running while Kai Studio is in the background
 - **Configurable model assignments** for chat, workflows, coding, security,
@@ -143,7 +143,7 @@ repository in Kai Studio's application-support directory.
 
 This repository contains application source only. It does **not** include:
 
-- KaiLore memory records
+- local memory records
 - conversation history
 - generated outputs
 - local model weights

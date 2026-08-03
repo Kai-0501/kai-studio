@@ -30,7 +30,7 @@ publishing is a separate explicit action.
 ## Federated coding-session memory
 
 Coding uses a dedicated federated three-tier working-memory system. It does
-**not** load KaiLore personal memory. Planner, implementer, and reviewer are
+**not** load personal memory. Planner, implementer, and reviewer are
 separate logical sessions scheduled sequentially against one loaded coding
 model.
 

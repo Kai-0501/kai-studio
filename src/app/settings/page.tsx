@@ -125,7 +125,7 @@ export default function SettingsPage() {
   function addModelRoot() {
     const root = modelRootDraft.trim();
     if (!root || modelSearchRoots.includes(root)) return;
-    if (root === "/" || root === "~" || root.endsWith("/.git") || root === "/Users/kai") {
+    if (root === "/" || root === "~" || root.endsWith("/.git")) {
       setMessage("Choose a dedicated model folder, not your whole home folder or a Git directory.");
       return;
     }
@@ -364,8 +364,7 @@ export default function SettingsPage() {
                         setDefaultModel(model.name);
                         setMessage("");
                       }}
-                      disabled={!isRunnableModel(model)}
-                      className="accent-sky-500 disabled:cursor-not-allowed"
+                      className="accent-sky-500"
                     />
                     <div>
                       <p className="text-sm font-medium">{model.displayName ?? displayName(model.name)}</p>
@@ -421,7 +420,7 @@ export default function SettingsPage() {
                     className="mt-3 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-sky-400/40"
                   >
                     {!availableModels.some((model) => model.name === modelAssignments[key]) ? <option value={modelAssignments[key]}>{displayName(modelAssignments[key])} · unavailable</option> : null}
-                    {availableModels.map((model) => <option key={`${key}-${model.name}`} value={model.name} disabled={!isRunnableModel(model)}>{model.displayName ?? displayName(model.name)}{!isRunnableModel(model) ? " · needs validation" : ""}</option>)}
+                    {availableModels.map((model) => <option key={`${key}-${model.name}`} value={model.name}>{model.displayName ?? displayName(model.name)}{!isRunnableModel(model) ? " · needs validation" : ""}</option>)}
                   </select>
                   {!availableModels.some((model) => model.name === modelAssignments[key] && (model.status === "available" || model.provider === "ollama")) ? <span className="mt-2 block text-xs text-amber-300">Assigned model is unavailable or has not passed runtime validation. Save is preserved, but execution will show a clear warning.</span> : null}
                 </label>
@@ -522,9 +521,8 @@ export default function SettingsPage() {
                   <h2 className="font-semibold">Kai Memory</h2>
                 </div>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                  Synced from Kai&apos;s private GitHub memory vault whenever Kai
-                  Studio opens. GitHub reviews new inbox entries every Sunday
-                  at 8:00am Singapore time; this editor remains as a manual fallback.
+                  Stored locally on this Mac. Use this editor to import or update
+                  the memory context that normal Chat can use.
                 </p>
               </div>
               <div className="shrink-0 text-left text-xs text-slate-500 sm:text-right">
@@ -554,7 +552,7 @@ export default function SettingsPage() {
 
             <label className="mt-5 block">
               <span className="text-sm font-medium text-slate-300">
-                Current cloud-backed memory
+                Current local memory
               </span>
               <textarea
                 value={memoryDraft}
@@ -607,9 +605,8 @@ export default function SettingsPage() {
               Privacy guarantee
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Chats, workflow inputs, saved runs, and model outputs remain local.
-              KaiLore&apos;s canonical memory is additionally stored in a private
-              GitHub repository and its Sunday review uses the configured Gemini API.
+              Chats, workflow inputs, saved runs, model outputs, and memory remain
+              local unless you explicitly enable a separate integration.
             </p>
           </section>
         </div>

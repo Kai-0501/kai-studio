@@ -4,36 +4,36 @@ import { WeightedLruCache } from "@/lib/memory/cache";
 import { parseMarkdownMemory } from "@/lib/memory/frontmatter";
 import { memoryContextSystemMessage } from "@/lib/memory/prompt";
 
-test("parses KaiLore front matter without inventing unknown details", () => {
+test("parses memory front matter without inventing unknown details", () => {
   const record = parseMarkdownMemory(
     `---
-id: person-angel
-title: Angel
-domain: relationships
-people: [Angel, Kai]
+id: person-example
+title: Example Person
+domain: example
+people: [Example Person]
 tags:
-  - secondary-school
+  - example-context
 confidence: high
 status: uncertain
 importance: 0.9
 unknowns: [exact dates unavailable]
-relationships: [met_at:secondary-school]
+relationships: [met_at:example-context]
 ---
-# Angel
+# Example Person
 
-Angel is part of Kai's history.`,
-    "people/angel.md",
+Example Person is a fixture record.`,
+    "people/example.md",
   );
 
-  assert.equal(record.id, "person-angel");
-  assert.deepEqual(record.people, ["Angel", "Kai"]);
+  assert.equal(record.id, "person-example");
+  assert.deepEqual(record.people, ["Example Person"]);
   assert.equal(record.confidence, "high");
   assert.equal(record.status, "uncertain");
   assert.ok(record.uncertainty.includes("exact dates unavailable"));
   assert.ok(record.uncertainty.includes("Record status is uncertain."));
   assert.equal(record.validFrom, undefined);
   assert.deepEqual(record.relationships, [
-    { type: "met_at", targetId: "secondary-school" },
+    { type: "met_at", targetId: "example-context" },
   ]);
 });
 

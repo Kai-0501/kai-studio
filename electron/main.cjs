@@ -301,17 +301,6 @@ function syncGitHubRepositories() {
   });
 }
 
-function syncCloudMemory() {
-  return new Promise((resolve) => {
-    const request = http.request(`http://127.0.0.1:${PORT}/api/memory/cloud-sync`, { method: "POST" }, (response) => {
-      response.resume();
-      response.on("end", () => resolve(response.statusCode));
-    });
-    request.on("error", (error) => { console.error("Cloud memory sync failed:", error); resolve(null); });
-    request.end();
-  });
-}
-
 function scheduleDailyGitHubSync() {
   const now = new Date();
   const nextRun = new Date(now);
@@ -403,7 +392,6 @@ app.whenReady().then(async () => {
 
   try {
     await waitForServer();
-    await syncCloudMemory();
     await syncGitHubRepositories();
     scheduleDailyGitHubSync();
     startActiveBuildMonitor();

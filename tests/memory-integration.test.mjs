@@ -8,49 +8,49 @@ import { HybridMemoryRetriever } from "@/lib/memory/retriever";
 
 async function fixture() {
   const directory = await mkdtemp(path.join(os.tmpdir(), "kai-memory-test-"));
-  const lore = path.join(directory, "KaiLore");
+  const lore = path.join(directory, "Memory");
   await mkdir(path.join(lore, "people"), { recursive: true });
   await writeFile(
     path.join(lore, "manifest.json"),
     JSON.stringify({ export_type: "full_snapshot", schema_version: "1.0" }),
   );
   await writeFile(
-    path.join(lore, "people", "angel.md"),
+    path.join(lore, "people", "example.md"),
     `---
-id: person-angel
-title: Angel
-domain: relationships
-people: [Angel]
-tags: [secondary-school]
+id: person-example
+title: Example Person
+domain: example
+people: [Example Person]
+tags: [example-context]
 confidence: high
 importance: 0.9
 ---
-# Angel
-Angel was Kai's secondary-school sweetheart. Exact dates are unavailable.`,
+# Example Person
+Example Person is a fixture record. Exact dates are unavailable.`,
   );
   await writeFile(
-    path.join(lore, "people", "bella.md"),
+    path.join(lore, "people", "unrelated.md"),
     `---
-id: person-bella
-title: Bella
-domain: relationships
-people: [Bella]
-tags: [church]
+id: unrelated-record
+title: Unrelated Record
+domain: example
+people: [Unrelated Record]
+tags: [unrelated]
 confidence: medium
 ---
-# Bella
-Bella is a separate person in KaiLore.`,
+# Unrelated Record
+Unrelated Record is a separate fixture record.`,
   );
   await writeFile(
     path.join(lore, "people", "old-angel.md"),
     `---
-id: person-angel-old
-title: Old Angel note
-domain: relationships
-people: [Angel]
+id: person-example-old
+title: Old example note
+domain: example
+people: [Example Person]
 status: superseded
 ---
-# Old Angel
+# Old example
 This old note should not be retrieved.`,
   );
   return { directory, lore };
@@ -73,8 +73,8 @@ test("retrieves one person's records without injecting unrelated people", async 
   const { directory, lore } = await fixture();
   const index = new SqliteMemoryIndex(lore, path.join(directory, "index.sqlite"));
   const retriever = new HybridMemoryRetriever(index);
-  const report = await retriever.retrieve("Tell me about Angel", {
-    topK: 4,
+  const report = await retriever.retrieve("Tell me about Example Person", {
+    topK: 1,
     candidateLimit: 10,
     maxCharacters: 2_000,
     maxPerDomain: 4,
@@ -83,11 +83,11 @@ test("retrieves one person's records without injecting unrelated people", async 
 
   assert.deepEqual(
     report.retrieved.map((item) => item.record.id),
-    ["person-angel"],
+    ["person-example"],
   );
   assert.ok(report.totalCharacters < 2_000);
   assert.ok(
-    report.retrieved[0].provenance.matchedEntities.includes("Angel"),
+    report.retrieved[0].provenance.matchedEntities.includes("Example Person"),
   );
   index.close();
 });
@@ -96,7 +96,7 @@ test("character budget excludes an otherwise relevant oversized record", async (
   const { directory, lore } = await fixture();
   const index = new SqliteMemoryIndex(lore, path.join(directory, "index.sqlite"));
   const retriever = new HybridMemoryRetriever(index);
-  const report = await retriever.retrieve("Angel", {
+  const report = await retriever.retrieve("Example Person", {
     topK: 5,
     candidateLimit: 10,
     maxCharacters: 20,

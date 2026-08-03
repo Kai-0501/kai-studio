@@ -13,7 +13,7 @@ The system keeps distinct resources separate:
 | Recent conversation | Active model context | Current chat | Conversational continuity |
 | Session working memory | Bounded RAM cache | Up to one hour | Reuse selected long-term records for follow-ups |
 | Hot retrieval cache | Bounded RAM cache | Configurable TTL | Avoid repeated parsing/ranking work |
-| KaiLore Markdown | SSD | Until Kai edits it | Canonical human-editable long-term memory |
+| Memory Markdown | SSD | Until the user edits it | Canonical human-editable long-term memory |
 | SQLite index | SSD | Rebuilt incrementally | Search metadata, FTS index, sparse vectors, and access data |
 | Model KV cache | Model backend | Backend-defined | Out of scope for Phase 1 |
 
@@ -24,7 +24,7 @@ prompt construction.
 ## Phase 1 data flow
 
 1. A chat sends the latest user message and a few compact recent turns.
-2. The indexer scans Markdown files beneath the configured KaiLore root.
+2. The indexer scans Markdown files beneath the configured memory root.
 3. SHA-256 hashes prevent unchanged files from being parsed and indexed again.
 4. SQLite FTS selects a wider candidate set without reading the corpus into RAM.
 5. Hybrid ranking combines FTS rank, normalized sparse-vector similarity,
@@ -47,13 +47,13 @@ a conservative subset: scalar values, inline arrays, and dash lists.
 
 ```markdown
 ---
-id: person-angel-001
-title: Angel
-domain: relationships
-category: relationships
-people: [Angel, Kai]
-entities: [secondary-school]
-tags: [relationship-history]
+id: person-example-001
+title: Example Person
+domain: personal
+category: profile
+people: [Example Person]
+entities: [example-context]
+tags: [example]
 created_at: 2026-07-30
 updated_at: 2026-07-30
 confidence: high
@@ -64,9 +64,9 @@ importance: 0.9
 operation: upsert
 supersedes: []
 unknowns: [exact dates unavailable]
-valid_from: secondary-school
+valid_from: example-context
 ---
-# Angel
+# Example Person
 
 Known content goes here. Unknown details remain explicitly unknown.
 ```
@@ -84,12 +84,12 @@ When a retrieved record explicitly lists IDs in `supersedes`, those older IDs
 are removed from the same retrieval result. A record merely having a later date
 does not silently override another record.
 
-## KaiLore v1 ingestion
+## Memory corpus ingestion
 
 Place the export in the application data directory:
 
 ```text
-KaiLore/
+Memory/
 ├── manifest.json
 ├── README.md
 ├── profile/
@@ -110,7 +110,7 @@ location without code changes:
 
 ```text
 KAI_STUDIO_DATA_DIR=/path/to/data
-KAI_STUDIO_KAILORE_DIR=/path/to/KaiLore
+KAI_STUDIO_KAILORE_DIR=/path/to/Memory
 KAI_STUDIO_MEMORY_INDEX=/path/to/memory-index.sqlite
 ```
 
@@ -120,7 +120,7 @@ it. Full snapshots and delta exports both work when every delta record carries
 an explicit `operation`. Copying a new snapshot does not cause absent records
 to be deleted.
 
-Enable **Tiered KaiLore memory** under Settings after placing the corpus. Until
+Enable **Tiered local memory** under Settings after placing the corpus. Until
 then, existing chat and weekly-memory behavior remains unchanged.
 
 ## Configuration

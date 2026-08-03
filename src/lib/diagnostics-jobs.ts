@@ -69,7 +69,7 @@ export function createDiagnosticsJob() {
 
 async function runDiagnostics(job: DiagnosticsJob) {
   try {
-    const root = process.env.KAI_STUDIO_SOURCE_DIR ?? "/Users/kai/KaiOS/promptdeck";
+    const root = process.env.KAI_STUDIO_SOURCE_DIR ?? process.cwd();
     job.progress.push("Checking every main page and navigation destination.");
     const pages = await routeEvidence();
     job.progress.push("Reviewing the interface for brittle or hard-coded behaviour.");
