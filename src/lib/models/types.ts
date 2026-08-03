@@ -23,6 +23,7 @@ export type ModelRole =
   | "vision.extractor"
   | "diagnostics.primary"
   | "diagnostics.parser"
+  | "progress.assessor"
   | "review.primary"
   | "memory.embedding";
 

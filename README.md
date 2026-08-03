@@ -46,9 +46,12 @@ outputs, and memory stay local.
 - **PDF extraction** for editorial and account-research workflows
 - **Generation telemetry**, including tokens per second by conversation and
   model
-- **Bounded three-tier coding memory** that keeps recent tool evidence hot,
-  compacts completed work into a trusted checkpoint, and stores the complete
-  event log locally for auditability
+- **Federated hybrid coding memory** with isolated planner, implementer, and
+  reviewer sessions, versioned shared coordination, leased write reservations,
+  proactive 16K/32K compaction, private retrieval, and a shared auditable cold ledger
+- **Progress-aware coding budgets** with deterministic progress checks,
+  non-blocking checkpoints, durable pause/resume, bounded automatic
+  continuations, and explicit user extensions
 
 ## Architecture
 

@@ -11,6 +11,21 @@ export type ActiveBuildEvent = {
   stepLimit?: number;
   extensionCount?: number;
   awaitingExtension?: boolean;
+  elapsedMinutes?: number;
+  executionBudgetMinutes?: number;
+  automaticExtensionMinutes?: number;
+  userExtensionMinutes?: number;
+  awaitingTimeDecision?: boolean;
+  latestMeaningfulProgress?: string;
+  currentAgent?: string;
+  currentRole?: string;
+  currentPhase?: string;
+  contextUtilization?: number;
+  currentRepositoryRevision?: string;
+  activeReservations?: string[];
+  pendingHandoffs?: number;
+  currentBlockers?: string[];
+  resourceWarning?: string;
 };
 
 export type ActiveBuildJob = {
@@ -29,6 +44,21 @@ export type ActiveBuildJob = {
   stepLimit?: number;
   extensionCount?: number;
   awaitingExtension?: boolean;
+  elapsedMinutes?: number;
+  executionBudgetMinutes?: number;
+  automaticExtensionMinutes?: number;
+  userExtensionMinutes?: number;
+  awaitingTimeDecision?: boolean;
+  latestMeaningfulProgress?: string;
+  currentAgent?: string;
+  currentRole?: string;
+  currentPhase?: string;
+  contextUtilization?: number;
+  currentRepositoryRevision?: string;
+  activeReservations?: string[];
+  pendingHandoffs?: number;
+  currentBlockers?: string[];
+  resourceWarning?: string;
 };
 
 const globalJobs = globalThis as typeof globalThis & {

@@ -14,9 +14,11 @@ import { DashboardBackLink } from "@/components/dashboard-back-link";
 export default function SettingsPage() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [defaultModel, setDefaultModel] = useState("gemma4:12b-mlx");
-  const [modelAssignments, setModelAssignments] = useState<ModelAssignments>({ chat: "gemma4:26b-mlx", meeting: "gemma4:12b-mlx", editorial: "gemma4:12b-mlx", account: "gemma4:26b-mlx", general: "gemma4:26b-mlx", coding: "qwen3.6:27b-mtp-q4_K_M", security: "gpt-oss-safeguard:20b", vision: "glm-ocr", diagnostics: "gemma4:31b-mlx", diagnosticsParser: "gemma4:12b-mlx", orchestration: "gemini-2.5-pro", review: "gemma4:31b-mlx", embedding: "local-hash" });
+  const [modelAssignments, setModelAssignments] = useState<ModelAssignments>({ chat: "gemma4:26b-mlx", meeting: "gemma4:12b-mlx", editorial: "gemma4:12b-mlx", account: "gemma4:26b-mlx", general: "gemma4:26b-mlx", coding: "qwen3.6:27b-mtp-q4_K_M", security: "gpt-oss-safeguard:20b", vision: "glm-ocr", diagnostics: "gemma4:31b-mlx", diagnosticsParser: "gemma4:12b-mlx", progressAssessor: "gemma4:12b-mlx", orchestration: "gemini-2.5-pro", review: "gemma4:31b-mlx", embedding: "local-hash" });
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(true);
   const [memoryDebugEnabled, setMemoryDebugEnabled] = useState(false);
+  const [codingContextLimit, setCodingContextLimit] = useState<16384 | 32768>(32768);
+  const [codingBudgetOverrideMinutes, setCodingBudgetOverrideMinutes] = useState<number | null>(null);
   const [checking, setChecking] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -46,6 +48,8 @@ export default function SettingsPage() {
       setModelAssignments(settings.modelAssignments);
       setLongTermMemoryEnabled(settings.longTermMemoryEnabled);
       setMemoryDebugEnabled(settings.memoryDebugEnabled);
+      setCodingContextLimit(settings.codingContextLimit);
+      setCodingBudgetOverrideMinutes(settings.codingBudgetOverrideMinutes);
       const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
       setMemory(currentMemory);
       setMemoryDraft(currentMemory.content);
@@ -74,6 +78,8 @@ export default function SettingsPage() {
         setModelAssignments(settings.modelAssignments);
         setLongTermMemoryEnabled(settings.longTermMemoryEnabled);
         setMemoryDebugEnabled(settings.memoryDebugEnabled);
+        setCodingContextLimit(settings.codingContextLimit);
+        setCodingBudgetOverrideMinutes(settings.codingBudgetOverrideMinutes);
         const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
         setMemory(currentMemory);
         setMemoryDraft(currentMemory.content);
@@ -97,6 +103,8 @@ export default function SettingsPage() {
         modelAssignments,
         longTermMemoryEnabled,
         memoryDebugEnabled,
+        codingContextLimit,
+        codingBudgetOverrideMinutes,
       }),
     });
 
@@ -365,7 +373,7 @@ export default function SettingsPage() {
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               {(Object.keys(modelAssignments) as Array<keyof ModelAssignments>).map((key) => (
                 <label key={key} className="rounded-xl border border-white/10 bg-[#0b0f18] p-4">
-                  <span className="block text-sm font-medium capitalize">{key === "general" ? "General Intelligence" : key === "account" ? "Account Intelligence" : key === "editorial" ? "Editorial Intelligence" : key === "meeting" ? "Meeting Intelligence" : key === "diagnosticsParser" ? "Diagnostics parser" : key === "orchestration" ? "Orchestration" : key === "review" ? "Review" : key}</span>
+                  <span className="block text-sm font-medium capitalize">{key === "general" ? "General Intelligence" : key === "account" ? "Account Intelligence" : key === "editorial" ? "Editorial Intelligence" : key === "meeting" ? "Meeting Intelligence" : key === "diagnosticsParser" ? "Diagnostics parser" : key === "progressAssessor" ? "Ambiguous-progress assessor" : key === "orchestration" ? "Orchestration" : key === "review" ? "Review" : key}</span>
                   <select
                     value={modelAssignments[key]}
                     onChange={(event) => { setModelAssignments((current) => ({ ...current, [key]: event.target.value })); setMessage(""); }}
@@ -381,6 +389,26 @@ export default function SettingsPage() {
               <p className="text-xs text-slate-500">Newly downloaded Ollama models appear after opening Settings or pressing Check connection.</p>
               <button type="button" onClick={saveDefault} disabled={saving} className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-2.5 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:opacity-40">{saving ? "Saving…" : "Save assignments"}</button>
             </div>
+          </section>
+
+          <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">
+            <h2 className="font-semibold">Coding session capacity</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Choose the private context size used by each logical coding agent and optionally override the task-aware initial time budget.</p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="rounded-xl border border-white/10 bg-[#0b0f18] p-4">
+                <span className="block text-sm font-medium">Agent context</span>
+                <select value={codingContextLimit} onChange={(event) => setCodingContextLimit(Number(event.target.value) as 16384 | 32768)} className="mt-3 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-sky-400/40">
+                  <option value={16384}>16K · lower memory use</option>
+                  <option value={32768}>32K · deeper repository work</option>
+                </select>
+              </label>
+              <label className="rounded-xl border border-white/10 bg-[#0b0f18] p-4">
+                <span className="block text-sm font-medium">Initial time budget</span>
+                <input type="number" min={5} max={180} value={codingBudgetOverrideMinutes ?? ""} onChange={(event) => setCodingBudgetOverrideMinutes(event.target.value ? Number(event.target.value) : null)} placeholder="Automatic by task type" className="mt-3 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-sky-400/40" />
+                <span className="mt-2 block text-xs text-slate-500">Leave blank for the task-aware 15–60 minute policy.</span>
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end border-t border-white/10 pt-5"><button type="button" onClick={saveDefault} disabled={saving} className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-2.5 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:opacity-40">{saving ? "Saving…" : "Save coding capacity"}</button></div>
           </section>
 
           <section className="mt-6 rounded-2xl border border-violet-400/20 bg-violet-400/[0.035] p-6">

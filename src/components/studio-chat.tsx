@@ -80,7 +80,7 @@ export function StudioChat({
   const [pendingBuildId, setPendingBuildId] = useState("");
   const [reviewedBuildId, setReviewedBuildId] = useState("");
   const [isApplyingBuild, setIsApplyingBuild] = useState(false);
-  const [activeLoopState, setActiveLoopState] = useState<{ jobId: string; stepCount: number; inspectionCount: number; stepLimit: number; extensionCount: number; awaitingExtension: boolean } | null>(null);
+  const [activeLoopState, setActiveLoopState] = useState<{ jobId: string; stepCount: number; inspectionCount: number; stepLimit: number; extensionCount: number; awaitingExtension: boolean; elapsedMinutes: number; executionBudgetMinutes: number; automaticExtensionMinutes: number; userExtensionMinutes: number; awaitingTimeDecision: boolean; latestMeaningfulProgress: string; currentPhase: string; currentAgent: string; currentRole: string; contextUtilization: number; currentRepositoryRevision: string; activeReservations: string[]; pendingHandoffs: number; currentBlockers: string[]; resourceWarning: string } | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioCaptureRef = useRef<AudioCapture | null>(null);
@@ -563,7 +563,7 @@ export function StudioChat({
         status?: "running" | "complete" | "failed";
         error?: string;
         events?: Array<{ type: "progress" | "final" | "error"; message?: string; content?: string; error?: string; readyToPush?: boolean; buildId?: string }>;
-        implementationStepCount?: number; inspectionCount?: number; stepLimit?: number; extensionCount?: number; awaitingExtension?: boolean;
+        implementationStepCount?: number; inspectionCount?: number; stepLimit?: number; extensionCount?: number; awaitingExtension?: boolean; elapsedMinutes?: number; executionBudgetMinutes?: number; automaticExtensionMinutes?: number; userExtensionMinutes?: number; awaitingTimeDecision?: boolean; latestMeaningfulProgress?: string; currentPhase?: string; currentAgent?: string; currentRole?: string; contextUtilization?: number; currentRepositoryRevision?: string; activeReservations?: string[]; pendingHandoffs?: number; currentBlockers?: string[]; resourceWarning?: string;
       };
       if (!response.ok) throw new Error(job.error || "The active build session could not be reopened.");
       if (resume && !conversation) {
@@ -572,7 +572,7 @@ export function StudioChat({
         setMessages([...conversation, { id: assistantId, role: "assistant", content: "" }]);
       }
       const events = job.events ?? [];
-      setActiveLoopState({ jobId, stepCount: job.implementationStepCount ?? 0, inspectionCount: job.inspectionCount ?? 0, stepLimit: job.stepLimit ?? 150, extensionCount: job.extensionCount ?? 0, awaitingExtension: job.awaitingExtension === true });
+      setActiveLoopState({ jobId, stepCount: job.implementationStepCount ?? 0, inspectionCount: job.inspectionCount ?? 0, stepLimit: job.stepLimit ?? 150, extensionCount: job.extensionCount ?? 0, awaitingExtension: job.awaitingExtension === true, elapsedMinutes: job.elapsedMinutes ?? 0, executionBudgetMinutes: job.executionBudgetMinutes ?? 0, automaticExtensionMinutes: job.automaticExtensionMinutes ?? 0, userExtensionMinutes: job.userExtensionMinutes ?? 0, awaitingTimeDecision: job.awaitingTimeDecision === true, latestMeaningfulProgress: job.latestMeaningfulProgress ?? "Preparing the coding session.", currentPhase: job.currentPhase ?? "Implementation", currentAgent: job.currentAgent ?? "implementer-1", currentRole: job.currentRole ?? "implementer", contextUtilization: job.contextUtilization ?? 0, currentRepositoryRevision: job.currentRepositoryRevision ?? "", activeReservations: job.activeReservations ?? [], pendingHandoffs: job.pendingHandoffs ?? 0, currentBlockers: job.currentBlockers ?? [], resourceWarning: job.resourceWarning ?? "" });
       const progress = events.filter((event) => event.type === "progress" && event.message).map((event) => event.message!);
       const finalEvent = [...events].reverse().find((event) => event.type === "final");
       const errorEvent = [...events].reverse().find((event) => event.type === "error");
@@ -591,10 +591,10 @@ export function StudioChat({
     }
   }
 
-  async function decideActiveLoop(decision: "extend" | "stop") {
+  async function decideActiveLoop(decision: "extend" | "stop" | "time_extend_15" | "time_extend_30" | "time_stop" | "cancel") {
     if (!activeLoopState) return;
     await fetch("/api/github/build/active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: activeLoopState.jobId, decision }) });
-    if (decision === "stop") setActiveLoopState(null);
+    if (decision === "stop" || decision === "time_stop" || decision === "cancel") setActiveLoopState(null);
   }
 
   useEffect(() => {
@@ -883,8 +883,9 @@ export function StudioChat({
                         </MarkdownResponse>
                       </div>
                       {isApplyingBuild && buildProgress.length ? <div className="ml-11 mt-4 space-y-2 rounded-2xl border border-sky-300/15 bg-sky-400/5 p-4 text-sm">{buildProgress.map((step, stepIndex) => <p key={`${stepIndex}-${step}`} className={stepIndex === buildProgress.length - 1 ? "animate-pulse text-sky-200" : "text-slate-500"}>{step}</p>)}</div> : null}
-                      {activeLoopState ? <p className="ml-11 mt-2 text-xs text-slate-500">Implementation steps: {activeLoopState.stepCount} · inspection actions: {activeLoopState.inspectionCount} · allowance: {activeLoopState.stepLimit}</p> : null}
+                      {activeLoopState ? <div className="ml-11 mt-3 grid gap-2 rounded-xl border border-sky-300/10 bg-sky-400/[0.035] p-3 text-xs text-slate-500 sm:grid-cols-2"><p>{activeLoopState.currentRole} · {activeLoopState.currentPhase}</p><p>{activeLoopState.elapsedMinutes.toFixed(1)} / {activeLoopState.executionBudgetMinutes || "—"} min</p><p>Implementation: {activeLoopState.stepCount} / {activeLoopState.stepLimit}</p><p>Inspection actions: {activeLoopState.inspectionCount}</p><p>Context: {Math.round(activeLoopState.contextUtilization * 100)}%</p><p>Reservations: {activeLoopState.activeReservations.length} · handoffs: {activeLoopState.pendingHandoffs}</p><p className="sm:col-span-2 text-slate-400">Latest progress: {activeLoopState.latestMeaningfulProgress}</p>{activeLoopState.currentBlockers.length ? <p className="sm:col-span-2 text-amber-200/70">Blocker: {activeLoopState.currentBlockers.at(-1)}</p> : null}{activeLoopState.resourceWarning ? <p className="sm:col-span-2 text-red-200/70">Resource warning: {activeLoopState.resourceWarning}</p> : null}<p className="sm:col-span-2">Automatic time: +{activeLoopState.automaticExtensionMinutes} min · approved time: +{activeLoopState.userExtensionMinutes} min</p></div> : null}
                       {activeLoopState?.awaitingExtension ? <div className="ml-11 mt-4 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm"><p className="font-medium text-amber-100">The coding loop is paused at {activeLoopState.stepCount} implementation steps.</p><p className="mt-1 text-amber-200/70">Inspection activity: {activeLoopState.inspectionCount}. Extensions used: {activeLoopState.extensionCount}.</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => void decideActiveLoop("extend")} className="rounded-lg bg-amber-300 px-3 py-2 text-xs font-semibold text-slate-950">Extend by 50 steps</button><button type="button" onClick={() => void decideActiveLoop("stop")} className="rounded-lg border border-amber-200/30 px-3 py-2 text-xs text-amber-100">Stop and preserve work</button></div></div> : null}
+                      {activeLoopState?.awaitingTimeDecision ? <div className="ml-11 mt-4 rounded-2xl border border-sky-300/30 bg-sky-300/10 p-4 text-sm"><p className="font-medium text-sky-100">The coding job reached its time budget and paused safely.</p><p className="mt-1 text-sky-200/70">Its checkout, memories, reservations, counters, and latest evidence remain preserved.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void decideActiveLoop("time_extend_15")} className="rounded-lg bg-sky-300 px-3 py-2 text-xs font-semibold text-slate-950">Continue 15 min</button><button type="button" onClick={() => void decideActiveLoop("time_extend_30")} className="rounded-lg bg-sky-300 px-3 py-2 text-xs font-semibold text-slate-950">Continue 30 min</button><button type="button" onClick={() => void decideActiveLoop("time_stop")} className="rounded-lg border border-sky-200/30 px-3 py-2 text-xs text-sky-100">Stop for review</button><button type="button" onClick={() => void decideActiveLoop("cancel")} className="rounded-lg border border-red-300/30 px-3 py-2 text-xs text-red-200">Cancel</button></div></div> : null}
                       {index === messages.length - 1 && !isRunning && (
                         <>{pendingBuildId ? <button ref={applyBuildButtonRef} type="button" onClick={applyPendingBuild} disabled={isApplyingBuild} className="mt-5 rounded-xl border border-sky-300/30 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-100 hover:bg-sky-400/25 disabled:opacity-50">{isApplyingBuild ? "Building, testing & repairing…" : "Build locally & verify"}</button> : reviewedBuildId ? <button type="button" onClick={pushReviewedBuild} disabled={isApplyingBuild} className="mt-5 rounded-xl border border-sky-300/30 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-100 hover:bg-sky-400/25 disabled:opacity-50">{isApplyingBuild ? "Opening draft PR…" : "Push branch & open draft PR"}</button> : <ResponseActions content={message.content} currentModel={model} onRegenerate={regenerateLastResponse} />}</>
                       )}

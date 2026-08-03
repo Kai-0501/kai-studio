@@ -3,6 +3,8 @@ export type KaiStudioSettings = {
   modelAssignments: ModelAssignments;
   longTermMemoryEnabled: boolean;
   memoryDebugEnabled: boolean;
+  codingContextLimit: 16384 | 32768;
+  codingBudgetOverrideMinutes: number | null;
 };
 
 export type ModelAssignments = {
@@ -16,6 +18,7 @@ export type ModelAssignments = {
   vision: string;
   diagnostics: string;
   diagnosticsParser: string;
+  progressAssessor: string;
   orchestration: string;
   review: string;
   embedding: string;

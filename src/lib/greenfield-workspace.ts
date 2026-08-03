@@ -13,10 +13,11 @@ export async function approveGreenfieldRoot(root: string) {
   const approved = greenfieldProjectRoot();
   const requested = path.resolve(root);
   if (requested !== approved && !requested.startsWith(`${approved}${path.sep}`)) throw new Error("Greenfield workspaces must stay inside the approved KaiStudioProjects root.");
+  await mkdir(approved, { recursive: true });
   await mkdir(requested, { recursive: true });
-  const resolved = await realpath(requested);
-  if (resolved !== requested) throw new Error("Greenfield workspace symlinks are not allowed.");
-  return requested;
+  const [resolvedApproved, resolvedRequested] = await Promise.all([realpath(approved), realpath(requested)]);
+  if (resolvedRequested !== resolvedApproved && !resolvedRequested.startsWith(`${resolvedApproved}${path.sep}`)) throw new Error("Greenfield workspace symlinks may not escape the approved root.");
+  return resolvedRequested;
 }
 
 export async function safeGreenfieldTarget(root: string, relativePath: string) {

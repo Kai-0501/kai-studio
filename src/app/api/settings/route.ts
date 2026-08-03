@@ -14,6 +14,8 @@ export async function PUT(request: Request) {
     modelAssignments?: unknown;
     longTermMemoryEnabled?: unknown;
     memoryDebugEnabled?: unknown;
+    codingContextLimit?: unknown;
+    codingBudgetOverrideMinutes?: unknown;
   };
 
   if (
@@ -25,6 +27,13 @@ export async function PUT(request: Request) {
       { error: "Choose an installed local model." },
       { status: 400 },
     );
+  }
+
+  if (body.codingContextLimit !== undefined && body.codingContextLimit !== 16384 && body.codingContextLimit !== 32768) {
+    return Response.json({ error: "Coding context must be 16K or 32K." }, { status: 400 });
+  }
+  if (body.codingBudgetOverrideMinutes !== undefined && body.codingBudgetOverrideMinutes !== null && (typeof body.codingBudgetOverrideMinutes !== "number" || !Number.isFinite(body.codingBudgetOverrideMinutes) || body.codingBudgetOverrideMinutes < 5 || body.codingBudgetOverrideMinutes > 180)) {
+    return Response.json({ error: "Coding time override must be between 5 and 180 minutes." }, { status: 400 });
   }
 
   const assignments = body.modelAssignments;
@@ -57,5 +66,7 @@ export async function PUT(request: Request) {
     ...(typeof body.memoryDebugEnabled === "boolean"
       ? { memoryDebugEnabled: body.memoryDebugEnabled }
       : {}),
+    ...(body.codingContextLimit === 16384 || body.codingContextLimit === 32768 ? { codingContextLimit: body.codingContextLimit } : {}),
+    ...(body.codingBudgetOverrideMinutes === null || typeof body.codingBudgetOverrideMinutes === "number" ? { codingBudgetOverrideMinutes: body.codingBudgetOverrideMinutes } : {}),
   }));
 }

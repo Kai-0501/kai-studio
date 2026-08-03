@@ -6,6 +6,8 @@ import {
   type ActiveBuildJob,
 } from "@/lib/active-build-jobs";
 import { decideCodingLoop, getCodingLoop } from "@/lib/coding-loop-control";
+import { decideCodingExecutionBudget, getCodingExecutionBudget } from "@/lib/coding-execution-control";
+import { elapsedMinutes } from "@/lib/execution-budget";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +34,9 @@ async function consumeEvents(response: Response, onEvent: (event: ActiveBuildEve
 
 function addEvent(job: ActiveBuildJob, event: ActiveBuildEvent) {
   job.events.push(event);
+  for (const key of ["elapsedMinutes", "executionBudgetMinutes", "automaticExtensionMinutes", "userExtensionMinutes", "awaitingTimeDecision", "latestMeaningfulProgress", "currentAgent", "currentRole", "currentPhase", "contextUtilization", "currentRepositoryRevision", "activeReservations", "pendingHandoffs", "currentBlockers", "resourceWarning"] as const) {
+    if (event[key] !== undefined) Object.assign(job, { [key]: event[key] });
+  }
   job.updatedAt = new Date().toISOString();
 }
 
@@ -44,6 +49,16 @@ function syncLoop(job: ActiveBuildJob) {
   job.stepLimit = loop.stepLimit;
   job.extensionCount = loop.extensionCount;
   job.awaitingExtension = loop.awaitingExtension;
+  const budget = getCodingExecutionBudget(job.pendingBuildId);
+  if (budget) {
+    job.elapsedMinutes = elapsedMinutes(budget);
+    job.executionBudgetMinutes = budget.budgetMinutes;
+    job.automaticExtensionMinutes = budget.automaticExtensionMinutes;
+    job.userExtensionMinutes = budget.userExtensionMinutes;
+    job.awaitingTimeDecision = budget.awaitingDecision;
+    job.latestMeaningfulProgress = budget.latestMeaningfulProgress;
+    job.currentPhase = budget.phase;
+  }
 }
 
 async function runJob(job: ActiveBuildJob, origin: string) {
@@ -100,6 +115,15 @@ export async function POST(request: NextRequest) {
     if (!job || !job.pendingBuildId) return Response.json({ error: "Build session not found." }, { status: 404 });
     const state = await decideCodingLoop(job.pendingBuildId, body.decision);
     if (!state) return Response.json({ error: "This coding session is not waiting for an extension decision." }, { status: 409 });
+    syncLoop(job);
+    return Response.json(publicActiveBuild(job));
+  }
+  if (typeof body.id === "string" && ["time_extend_15", "time_extend_30", "time_stop", "cancel"].includes(String(body.decision))) {
+    const job = activeBuildJobs.get(body.id);
+    if (!job || !job.pendingBuildId) return Response.json({ error: "Build session not found." }, { status: 404 });
+    const mapped = body.decision === "time_extend_15" ? "extend15" : body.decision === "time_extend_30" ? "extend30" : body.decision === "cancel" ? "cancel" : "stop";
+    const state = await decideCodingExecutionBudget(job.pendingBuildId, mapped);
+    if (!state) return Response.json({ error: "This coding session is not waiting for a time decision." }, { status: 409 });
     syncLoop(job);
     return Response.json(publicActiveBuild(job));
   }

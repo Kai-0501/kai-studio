@@ -12,6 +12,19 @@ test("read-only inspection is not an implementation step", () => {
   assert.deepEqual(thresholdNotice(80, new Set([40])), [80]);
 });
 
+test("a coding session can inspect more than 20 times without consuming its mutation budget", () => {
+  let implementationSteps = 0;
+  let inspectionActions = 0;
+  for (let index = 0; index < 30; index += 1) {
+    const tool = index % 3 === 0 ? "inspect_tree" : index % 3 === 1 ? "read_file" : "search";
+    if (countsAsImplementationStep(tool)) implementationSteps += 1;
+    else inspectionActions += 1;
+  }
+  assert.equal(inspectionActions, 30);
+  assert.equal(implementationSteps, 0);
+  assert.deepEqual(thresholdNotice(implementationSteps, new Set()), []);
+});
+
 test("progress tracker stops identical failures and two-state cycles", () => {
   const tracker = new ProgressTracker();
   for (let index = 0; index < 3; index += 1) tracker.observe({ signature: "run_checks", resultFingerprint: "same", changedRepository: false });

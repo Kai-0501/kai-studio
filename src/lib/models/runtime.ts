@@ -24,7 +24,7 @@ export async function resolveRole(role: ModelRole, signal?: AbortSignal) {
   const route = roleRoutes[role];
   if (!route) throw new ModelRuntimeError(`No route is configured for ${role}.`, "configuration");
   const settings = await readSettings();
-  const assignmentKey = role === "coder.primary" ? "coding" : role.startsWith("security.") ? "security" : role === "editorial.primary" ? "editorial" : role === "vision.extractor" ? "vision" : role === "diagnostics.primary" ? "diagnostics" : role === "diagnostics.parser" ? "diagnosticsParser" : role === "orchestrator.cloud" ? "orchestration" : role === "review.primary" ? "review" : role === "memory.embedding" ? "embedding" : role === "chat.default" ? "chat" : undefined;
+  const assignmentKey = role === "coder.primary" ? "coding" : role.startsWith("security.") ? "security" : role === "editorial.primary" ? "editorial" : role === "vision.extractor" ? "vision" : role === "diagnostics.primary" ? "diagnostics" : role === "diagnostics.parser" ? "diagnosticsParser" : role === "progress.assessor" ? "progressAssessor" : role === "orchestrator.cloud" ? "orchestration" : role === "review.primary" ? "review" : role === "memory.embedding" ? "embedding" : role === "chat.default" ? "chat" : undefined;
   const assignedProviderModel = assignmentKey ? settings.modelAssignments[assignmentKey] : undefined;
   const template = modelRegistry.get(route.primary);
   if (assignedProviderModel && template) {

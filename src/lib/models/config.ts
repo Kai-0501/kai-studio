@@ -21,6 +21,7 @@ const defaultRoutes: Record<ModelRole, RoleRoute> = {
   "vision.extractor": { primary: "local.glm-ocr", requiredCapabilities: ["vision"], localOnly: true },
   "diagnostics.primary": { primary: "local.gemma4-31b-security", requiredCapabilities: ["chat", "reasoning"], localOnly: true },
   "diagnostics.parser": { primary: "local.gemma4-12b-editor", requiredCapabilities: ["chat", "structured-output"], localOnly: true },
+  "progress.assessor": { primary: "local.gemma4-12b-editor", requiredCapabilities: ["chat", "structured-output"], localOnly: true },
   "review.primary": { primary: "local.gemma4-31b-security", requiredCapabilities: ["repository-review", "structured-output"], localOnly: true },
   "memory.embedding": { primary: "local.memory-hash-embedding", requiredCapabilities: ["embedding"], localOnly: true },
 };

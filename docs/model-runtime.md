@@ -26,6 +26,10 @@ The registry currently defines these stable roles:
 - `editorial.primary`
 - `vision.extractor`
 - `diagnostics.primary`
+- `diagnostics.parser`
+- `progress.assessor`
+- `orchestration.primary`
+- `review.primary`
 - `orchestrator.cloud`
 
 Settings store user-selected provider model identifiers for each user-facing

@@ -27,10 +27,12 @@ Path traversal, symlink escape, oversized files, broad shell access, and writes
 outside the checkout are rejected. The result remains staged for human review;
 publishing is a separate explicit action.
 
-## Coding-session memory
+## Federated coding-session memory
 
-Coding uses a dedicated three-tier working-memory system. It does **not** load
-KaiLore personal memory.
+Coding uses a dedicated federated three-tier working-memory system. It does
+**not** load KaiLore personal memory. Planner, implementer, and reviewer are
+separate logical sessions scheduled sequentially against one loaded coding
+model.
 
 - **Hot:** the latest exact model/tool exchanges, capped by message and
   character budgets.
@@ -38,9 +40,19 @@ KaiLore personal memory.
   checks, and current blockers.
 - **Cold:** a lossless local JSONL event stream for debugging and audit.
 
+Private checkpoints never become shared prompts. Cross-agent coordination is a
+separate bounded, versioned record with a task graph, repository identity,
+leased write reservations, test state, blockers, decisions, and handoff queue.
+Optimistic version checks, reservation leases, and repository identities block
+stale or conflicting writes. Handoffs are structured and acknowledged only
+after the receiver validates their evidence and current repository state.
+
 When exact evidence ages out of hot context, the model is instructed to re-read
 the file or rerun the check rather than infer from a summary. This bounds KV
 cache growth without discarding repository evidence or weakening verification.
+Context is proactively compacted under a configurable 16K or 32K budget, with
+dedicated allocations for instructions, scope, exact evidence, coordination,
+warm state, recent tools, and response headroom.
 
 ## Durable user experience
 
@@ -49,3 +61,9 @@ progress can be reopened after navigating elsewhere in Kai Studio, and the
 desktop shell prevents ordinary background throttling from terminating a build.
 Progress messages are temporary; the completed chat retains the final result
 and review actions.
+
+The runtime also maintains a task-aware time budget. Deterministic progress can
+earn bounded five-minute continuations; ambiguous progress alone may be assessed
+by the configured 12B progress role. At the boundary, state is preserved while
+the user chooses +15 minutes, +30 minutes, stop for review, or cancel. Resource,
+sandbox, cancellation, and non-progress guards remain independent.
