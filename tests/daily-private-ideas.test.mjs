@@ -99,7 +99,7 @@ test("Gemini candidate transport uses primitive items instead of an incompatible
   process.env.AI_API_KEY = "test-key";
   process.env.AI_MODEL = "gemini-test";
   try {
-    const candidateTransport = { type: "object", properties: { ideas: { type: "array", minItems: 3, maxItems: 3, items: { type: "string" } } }, required: ["ideas"] };
+    const candidateTransport = { type: "object", properties: { ideas: { type: "array", items: { type: "string" } } }, required: ["ideas"] };
     const request = providerRequest("Return concise candidates", compactSeedSchema(3), "gemini", 4096, candidateTransport);
     const payload = JSON.parse(request.init.body);
     assert.equal(payload.generationConfig.responseMimeType, "application/json");

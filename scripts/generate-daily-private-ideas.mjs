@@ -456,7 +456,10 @@ function compactSeedTransportSchema(count) {
   return {
     type: "object",
     properties: {
-      ideas: { type: "array", minItems: count, maxItems: count, items: { type: "string" } },
+      // The Gemini REST Schema message rejects array-size constraints for this
+      // model family. Exact count remains an explicit prompt instruction and
+      // an authoritative local validation rule before any expansion or write.
+      ideas: { type: "array", items: { type: "string" } },
     },
     required: ["ideas"],
   };
