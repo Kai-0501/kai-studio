@@ -43,6 +43,44 @@ export function providerSchema(schema, targetProvider) {
   return copy;
 }
 
+// Gemini's legacy REST Schema message does not accept a full JSON-Schema
+// document: `$ref`, `$defs`, `oneOf`, `const`, and several other legitimate
+// contract keywords are rejected. Use a deliberately shallow transport shape
+// to guarantee syntactically valid JSON at the provider boundary, then apply
+// the complete provider-neutral schema and semantic checks locally.
+function geminiTransportSchema(schema) {
+  const definitions = schema?.$defs || {};
+  const resolve = (node, seen = new Set()) => {
+    if (!node || typeof node !== "object") return node;
+    if (typeof node.$ref === "string" && node.$ref.startsWith("#/$defs/")) {
+      const name = node.$ref.slice("#/$defs/".length);
+      if (definitions[name] && !seen.has(name)) {
+        const nextSeen = new Set(seen);
+        nextSeen.add(name);
+        return resolve(definitions[name], nextSeen);
+      }
+    }
+    return node;
+  };
+  const property = (node) => {
+    const resolved = resolve(node);
+    const type = Array.isArray(resolved?.type) ? resolved.type.find((value) => value !== "null") : resolved?.type;
+    if (!type) return null;
+    return { type };
+  };
+  const root = resolve(schema);
+  const properties = Object.fromEntries(
+    Object.entries(root?.properties || {})
+      .map(([name, value]) => [name, property(value)])
+      .filter(([, value]) => value),
+  );
+  return {
+    type: "object",
+    properties,
+    required: Object.keys(properties),
+  };
+}
+
 export function expectedIdeaCount(value = process.env.IDEA_COUNT || "3") {
   const count = Number(value);
   if (!Number.isInteger(count) || ![1, 3].includes(count)) throw new Error("IDEA_COUNT must be exactly 1 (manual review) or 3 (daily schedule).");
@@ -77,7 +115,7 @@ export function providerRequest(prompt, schema, targetProvider = provider) {
           generationConfig: {
             maxOutputTokens: 32768,
             responseMimeType: "application/json",
-            responseSchema,
+            responseSchema: geminiTransportSchema(schema),
           },
         }),
       },
