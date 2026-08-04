@@ -72,6 +72,12 @@ export type ModelDefinition = {
   defaultTemperature: number;
   defaultContextAllocation: number;
   enabled: boolean;
+  family?: string;
+  parameterClass?: string;
+  architecture?: "dense" | "moe" | "unknown";
+  quantization?: string;
+  /** Only set when the runtime reports a trustworthy value. */
+  estimatedResidentBytes?: number;
 };
 
 export type RoleRoute = {

@@ -29,6 +29,7 @@ export async function PUT(request: Request) {
     codingBudgetOverrideMinutes?: unknown;
     modelSearchRoots?: unknown;
     embeddingRuntime?: unknown;
+    codingRuntime?: unknown;
   };
 
   if (
@@ -46,6 +47,15 @@ export async function PUT(request: Request) {
     return Response.json({ error: "Model folders must be valid local paths." }, { status: 400 });
   }
   if (body.embeddingRuntime !== undefined && (typeof body.embeddingRuntime !== "object" || body.embeddingRuntime === null)) return Response.json({ error: "Embedding runtime settings are invalid." }, { status: 400 });
+  if (body.codingRuntime !== undefined && (typeof body.codingRuntime !== "object" || body.codingRuntime === null)) return Response.json({ error: "Coding runtime settings are invalid." }, { status: 400 });
+  if (body.codingRuntime && typeof body.codingRuntime === "object") {
+    const policy = body.codingRuntime as Partial<import("@/types/settings").CodingRuntimeSettings>;
+    if (policy.executionMode !== "single-agent" && policy.executionMode !== "multi-agent-sequential") return Response.json({ error: "Choose Single Agent or Multi-Agent Sequential." }, { status: 400 });
+    if (policy.inactiveAgentCachePolicy !== "checkpoint-reconstruct" && policy.inactiveAgentCachePolicy !== "retain-bounded") return Response.json({ error: "Inactive-agent cache policy is invalid." }, { status: 400 });
+    if (typeof policy.releaseIdleDiagnosticsBeforeCoding !== "boolean" || typeof policy.releaseIdleKaiLoreBeforeCoding !== "boolean") return Response.json({ error: "Pre-coding release settings must be on or off." }, { status: 400 });
+    if (typeof policy.modelIdleTimeoutSeconds !== "number" || policy.modelIdleTimeoutSeconds < 30 || policy.modelIdleTimeoutSeconds > 1800) return Response.json({ error: "Coding-model idle timeout must be between 30 and 1800 seconds." }, { status: 400 });
+    if (!policy.memoryPressureFallback || !["offer-16k", "pause", "single-agent"].includes(policy.memoryPressureFallback)) return Response.json({ error: "Memory-pressure fallback is invalid." }, { status: 400 });
+  }
 
   if (body.codingContextLimit !== undefined && body.codingContextLimit !== 16384 && body.codingContextLimit !== 32768) {
     return Response.json({ error: "Coding context must be 16K or 32K." }, { status: 400 });
@@ -88,5 +98,6 @@ export async function PUT(request: Request) {
     ...(body.codingBudgetOverrideMinutes === null || typeof body.codingBudgetOverrideMinutes === "number" ? { codingBudgetOverrideMinutes: body.codingBudgetOverrideMinutes } : {}),
     ...(Array.isArray(body.modelSearchRoots) ? { modelSearchRoots: [...new Set(body.modelSearchRoots.map((root) => path.resolve(root.trim())))] } : {}),
     ...(body.embeddingRuntime && typeof body.embeddingRuntime === "object" ? { embeddingRuntime: body.embeddingRuntime as import("@/types/settings").EmbeddingRuntimeSettings } : {}),
+    ...(body.codingRuntime && typeof body.codingRuntime === "object" ? { codingRuntime: body.codingRuntime as import("@/types/settings").CodingRuntimeSettings } : {}),
   }));
 }

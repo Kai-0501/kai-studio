@@ -13,12 +13,20 @@ const defaultSettings: KaiStudioSettings = {
   modelAssignments: defaultModelAssignments,
   longTermMemoryEnabled: true,
   memoryDebugEnabled: false,
-  codingContextLimit: 32768,
+  codingContextLimit: 16384,
   codingBudgetOverrideMinutes: null,
   modelSearchRoots: [],
   embeddingRuntime: {
     kaiLore: { idleTimeoutSeconds: 120, minimumWarmSeconds: 30, retainDuringIndexing: true, retainAcrossTransitions: false, evictOnMemoryPressure: true },
     coding: { idleTimeoutSeconds: 300, minimumWarmSeconds: 60, retainDuringIndexing: true, retainAcrossTransitions: true, evictOnMemoryPressure: true },
+  },
+  codingRuntime: {
+    executionMode: "multi-agent-sequential",
+    inactiveAgentCachePolicy: "checkpoint-reconstruct",
+    releaseIdleDiagnosticsBeforeCoding: true,
+    releaseIdleKaiLoreBeforeCoding: true,
+    modelIdleTimeoutSeconds: 180,
+    memoryPressureFallback: "offer-16k",
   },
 };
 
@@ -44,7 +52,8 @@ export async function readSettings(): Promise<KaiStudioSettings> {
       kaiLore: { ...defaultSettings.embeddingRuntime.kaiLore, ...(savedRuntime?.kaiLore ?? {}) },
       coding: { ...defaultSettings.embeddingRuntime.coding, ...(savedRuntime?.coding ?? {}) },
     };
-    return { ...defaultSettings, ...saved, embeddingRuntime: runtime, modelAssignments: assignments, modelSearchRoots: Array.isArray(saved.modelSearchRoots) ? saved.modelSearchRoots.filter((root): root is string => typeof root === "string") : [] };
+    const codingRuntime = { ...defaultSettings.codingRuntime, ...(saved.codingRuntime ?? {}) };
+    return { ...defaultSettings, ...saved, embeddingRuntime: runtime, codingRuntime, modelAssignments: assignments, modelSearchRoots: Array.isArray(saved.modelSearchRoots) ? saved.modelSearchRoots.filter((root): root is string => typeof root === "string") : [] };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultSettings;
     throw error;

@@ -26,6 +26,7 @@ export type ActiveBuildEvent = {
   pendingHandoffs?: number;
   currentBlockers?: string[];
   resourceWarning?: string;
+  codingRuntime?: import("@/lib/coding-runtime").CodingRuntimeSnapshot;
 };
 
 export type ActiveBuildJob = {
@@ -59,6 +60,7 @@ export type ActiveBuildJob = {
   pendingHandoffs?: number;
   currentBlockers?: string[];
   resourceWarning?: string;
+  codingRuntime?: import("@/lib/coding-runtime").CodingRuntimeSnapshot;
 };
 
 const globalJobs = globalThis as typeof globalThis & {

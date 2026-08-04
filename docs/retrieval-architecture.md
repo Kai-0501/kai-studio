@@ -27,3 +27,12 @@ KaiLore and coding embeddings use the shared provider-neutral `EmbeddingRuntimeM
 The manager records ownership (`kai-managed`, `shared-ollama`, `user-managed-external`, or `unsupported`), lifecycle, refcount, last-use time, unload deadline, and the last health error. KaiLore defaults to a short 120-second idle retention. Coding defaults to 300 seconds and can remain warm across planner/implementer/reviewer transitions. Settings bound retention and can retain a runtime during indexing. Memory-pressure eviction only targets idle embedding leases and never active leases or unrelated model roles.
 
 For shared Ollama models, load and unload operations are exact-tag scoped. Unload requests use Ollama's `keep_alive: 0` and never issue a broad runtime shutdown. External or unsupported runtimes are observed but never forcibly unloaded. Status is available through `/api/retrieval/status` and `/api/retrieval/runtime`.
+
+Coding retrieval is deliberately burst-only during a coding job. It acquires a
+coding-domain embedding lease for the bounded retrieval operation, supplies the
+validated result to the active logical role, and releases the lease afterward.
+Planner, implementer, and reviewer do not inherit KaiLore results or one
+another's retrieval cache. Before coding begins, an idle KaiLore embedding may
+be released only when its reference count is zero and Kai Studio owns an exact,
+supported unload operation. Active and externally managed runtimes are left
+untouched.

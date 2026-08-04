@@ -19,7 +19,7 @@ export default function SettingsPage() {
   const [modelAssignments, setModelAssignments] = useState<ModelAssignments>(defaultModelAssignments);
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(true);
   const [memoryDebugEnabled, setMemoryDebugEnabled] = useState(false);
-  const [codingContextLimit, setCodingContextLimit] = useState<16384 | 32768>(32768);
+  const [codingContextLimit, setCodingContextLimit] = useState<16384 | 32768>(16384);
   const [codingBudgetOverrideMinutes, setCodingBudgetOverrideMinutes] = useState<number | null>(null);
   const [checking, setChecking] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,6 +32,8 @@ export default function SettingsPage() {
   const [performance, setPerformance] = useState<GenerationPerformance[]>([]);
   const [modelSearchRoots, setModelSearchRoots] = useState<string[]>([]);
   const [embeddingRuntime, setEmbeddingRuntime] = useState<KaiStudioSettings["embeddingRuntime"] | null>(null);
+  const [codingRuntime, setCodingRuntime] = useState<KaiStudioSettings["codingRuntime"] | null>(null);
+  const [codingRuntimeStatus, setCodingRuntimeStatus] = useState<{ jobs?: Array<{ jobId: string; status: string; activeAgent?: string; weightResidency: string; memoryPressure: string; sessions: Array<{ role: string; status: string; kvCache: string; contextLimit: number }> }>; generative?: Array<{ displayName: string; lifecycle: string; leaseCount: number; ownership: string }> } | null>(null);
   const [modelRootDraft, setModelRootDraft] = useState("");
   const [validatingModel, setValidatingModel] = useState<string | null>(null);
   const [retrieval, setRetrieval] = useState<{ kaiLore: { model: string; status: string; message: string; generation?: { dimensions?: number; model_revision?: string } | null }; coding: { model: string; status: string; message: string; hybridEnabled: boolean; reranker: string } } | null>(null);
@@ -44,12 +46,13 @@ export default function SettingsPage() {
     setMessage("");
 
     try {
-      const [statusResponse, settingsResponse, memoryResponse, performanceResponse, retrievalResponse] = await Promise.all([
+      const [statusResponse, settingsResponse, memoryResponse, performanceResponse, retrievalResponse, codingRuntimeResponse] = await Promise.all([
         fetch("/api/system/status"),
         fetch("/api/settings"),
         fetch("/api/memory"),
         fetch("/api/performance"),
         fetch("/api/retrieval/status"),
+        fetch("/api/coding/runtime"),
       ]);
       const systemStatus = (await statusResponse.json()) as SystemStatus;
       const settings =
@@ -63,6 +66,7 @@ export default function SettingsPage() {
       setCodingBudgetOverrideMinutes(settings.codingBudgetOverrideMinutes);
       setModelSearchRoots(settings.modelSearchRoots ?? []);
       setEmbeddingRuntime(settings.embeddingRuntime);
+      setCodingRuntime(settings.codingRuntime);
       const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
       setMemory(currentMemory);
       setMemoryDraft(currentMemory.content);
@@ -71,6 +75,7 @@ export default function SettingsPage() {
         (await performanceResponse.json()) as GenerationPerformance[],
       );
       setRetrieval(await retrievalResponse.json());
+      setCodingRuntimeStatus(await codingRuntimeResponse.json());
     } finally {
       setChecking(false);
     }
@@ -83,8 +88,9 @@ export default function SettingsPage() {
       fetch("/api/memory"),
       fetch("/api/performance"),
       fetch("/api/retrieval/status"),
+      fetch("/api/coding/runtime"),
     ])
-      .then(async ([statusResponse, settingsResponse, memoryResponse, performanceResponse, retrievalResponse]) => {
+      .then(async ([statusResponse, settingsResponse, memoryResponse, performanceResponse, retrievalResponse, codingRuntimeResponse]) => {
         const systemStatus = (await statusResponse.json()) as SystemStatus;
         const settings =
           (await settingsResponse.json()) as KaiStudioSettings;
@@ -97,6 +103,7 @@ export default function SettingsPage() {
         setCodingBudgetOverrideMinutes(settings.codingBudgetOverrideMinutes);
         setModelSearchRoots(settings.modelSearchRoots ?? []);
         setEmbeddingRuntime(settings.embeddingRuntime);
+        setCodingRuntime(settings.codingRuntime);
         const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
         setMemory(currentMemory);
         setMemoryDraft(currentMemory.content);
@@ -105,6 +112,7 @@ export default function SettingsPage() {
           (await performanceResponse.json()) as GenerationPerformance[],
         );
         setRetrieval(await retrievalResponse.json());
+        setCodingRuntimeStatus(await codingRuntimeResponse.json());
       })
       .finally(() => setChecking(false));
   }, []);
@@ -125,6 +133,7 @@ export default function SettingsPage() {
         codingBudgetOverrideMinutes,
         modelSearchRoots,
         ...(embeddingRuntime ? { embeddingRuntime } : {}),
+        ...(codingRuntime ? { codingRuntime } : {}),
       }),
     });
 
@@ -509,9 +518,32 @@ export default function SettingsPage() {
             <div className="mt-5 flex justify-end border-t border-white/10 pt-5"><button type="button" onClick={saveDefault} disabled={saving} className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-2.5 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:opacity-40">{saving ? "Saving…" : "Save folders"}</button></div>
           </section>
 
+          <section id="coding-runtime" className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">
+            <h2 className="font-semibold">Coding runtime</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Use one configured coding model across sequential private Planner, Implementer, and Reviewer sessions. Inactive sessions are checkpointed so Kai Studio does not keep three full context caches in memory.</p>
+            {codingRuntime ? <>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <label className="rounded-xl border border-white/10 bg-[#0b0f18] p-4"><span className="block text-sm font-medium">Execution mode</span><select value={codingRuntime.executionMode} onChange={(event) => setCodingRuntime((current) => current ? { ...current, executionMode: event.target.value as KaiStudioSettings["codingRuntime"]["executionMode"] } : current)} className="mt-3 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2.5 text-sm text-slate-200"><option value="multi-agent-sequential">Multi-Agent Sequential · recommended</option><option value="single-agent">Single Agent · lower memory</option></select></label>
+                <label className="rounded-xl border border-white/10 bg-[#0b0f18] p-4"><span className="block text-sm font-medium">Inactive-agent context</span><select value={codingRuntime.inactiveAgentCachePolicy} onChange={(event) => setCodingRuntime((current) => current ? { ...current, inactiveAgentCachePolicy: event.target.value as KaiStudioSettings["codingRuntime"]["inactiveAgentCachePolicy"] } : current)} className="mt-3 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2.5 text-sm text-slate-200"><option value="checkpoint-reconstruct">Checkpoint and reconstruct · recommended</option><option value="retain-bounded">Retain bounded cache when supported</option></select></label>
+                <label className="rounded-xl border border-white/10 bg-[#0b0f18] p-4"><span className="block text-sm font-medium">Coding-model idle timeout</span><input type="number" min={30} max={1800} value={codingRuntime.modelIdleTimeoutSeconds} onChange={(event) => setCodingRuntime((current) => current ? { ...current, modelIdleTimeoutSeconds: Math.min(1800, Math.max(30, Number(event.target.value) || 30)) } : current)} className="mt-3 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2.5 text-sm text-slate-200" /><span className="mt-2 block text-xs text-slate-500">Seconds to keep shared coding weights warm after the final role finishes.</span></label>
+                <label className="rounded-xl border border-white/10 bg-[#0b0f18] p-4"><span className="block text-sm font-medium">Memory-pressure fallback</span><select value={codingRuntime.memoryPressureFallback} onChange={(event) => setCodingRuntime((current) => current ? { ...current, memoryPressureFallback: event.target.value as KaiStudioSettings["codingRuntime"]["memoryPressureFallback"] } : current)} className="mt-3 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2.5 text-sm text-slate-200"><option value="offer-16k">Offer 16K context</option><option value="single-agent">Offer Single Agent</option><option value="pause">Pause and ask</option></select></label>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-[#0b0f18] p-4"><span><span className="block text-sm font-medium">Release idle diagnostics models</span><span className="mt-1 block text-xs text-slate-500">Only Kai Studio-owned models with zero active references.</span></span><input type="checkbox" checked={codingRuntime.releaseIdleDiagnosticsBeforeCoding} onChange={(event) => setCodingRuntime((current) => current ? { ...current, releaseIdleDiagnosticsBeforeCoding: event.target.checked } : current)} className="h-4 w-4 accent-sky-400" /></label>
+                <label className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-[#0b0f18] p-4"><span><span className="block text-sm font-medium">Release idle KaiLore Embedding</span><span className="mt-1 block text-xs text-slate-500">KaiLore data and index remain intact and isolated.</span></span><input type="checkbox" checked={codingRuntime.releaseIdleKaiLoreBeforeCoding} onChange={(event) => setCodingRuntime((current) => current ? { ...current, releaseIdleKaiLoreBeforeCoding: event.target.checked } : current)} className="h-4 w-4 accent-sky-400" /></label>
+              </div>
+              <div className="mt-5 rounded-xl border border-white/10 bg-[#0b0f18] p-4">
+                <p className="text-sm font-medium">Local runtime status</p>
+                {codingRuntimeStatus?.jobs?.length ? codingRuntimeStatus.jobs.slice(-3).reverse().map((job) => <div key={job.jobId} className="mt-3 border-t border-white/10 pt-3 text-xs text-slate-400"><p><span className="text-sky-200">{job.status}</span> · weights {job.weightResidency} · pressure {job.memoryPressure}</p><p className="mt-1">{job.sessions.map((session) => `${session.role}: ${session.status}/${session.kvCache}/${Math.round(session.contextLimit / 1024)}K`).join(" · ")}</p></div>) : <p className="mt-2 text-xs text-slate-500">No coding job has requested residency in this app session.</p>}
+                {codingRuntimeStatus?.generative?.length ? <p className="mt-3 text-xs text-slate-500">Resident model lifecycle: {codingRuntimeStatus.generative.map((model) => `${model.displayName} ${model.lifecycle} (${model.leaseCount} refs, ${model.ownership})`).join(" · ")}</p> : null}
+              </div>
+            </> : null}
+            <div className="mt-5 flex justify-end border-t border-white/10 pt-5"><button type="button" onClick={saveDefault} disabled={saving || !codingRuntime} className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-2.5 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:opacity-40">{saving ? "Saving…" : "Save coding runtime"}</button></div>
+          </section>
+
           <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">
             <h2 className="font-semibold">Coding session capacity</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Choose the private context size used by each logical coding agent and optionally override the task-aware initial time budget.</p>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Choose the private context size used by each logical coding agent and optionally override the task-aware initial time budget. 16K is the constrained-machine default; 32K is opt-in for deeper work.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <label className="rounded-xl border border-white/10 bg-[#0b0f18] p-4">
                 <span className="block text-sm font-medium">Agent context</span>

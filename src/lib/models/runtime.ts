@@ -8,6 +8,7 @@ import { ModelRuntimeError } from "@/lib/models/types";
 import { readSettings } from "@/lib/settings-store";
 import { ensureManagedLocalModel, isManagedLocalModel } from "@/lib/local-model-runtime";
 import type { ModelAssignments } from "@/types/settings";
+import { generativeRuntimeManager } from "@/lib/generative-runtime";
 
 const providers = new Map<string, ModelProvider>([
   [ollamaProvider.id, ollamaProvider],
@@ -92,7 +93,20 @@ export async function generateForRole(request: GenerateRequest): Promise<Generat
   let selected: Awaited<ReturnType<typeof resolveRole>> | undefined;
   try {
     selected = await resolveRole(request.role, request.signal);
-    const result = await selected.provider.generate(selected.model, request);
+    const settings = await readSettings();
+    const lease = await generativeRuntimeManager.acquire({
+      model: selected.model,
+      role: request.role,
+      workflow: request.workflow,
+      minimumWarmSeconds: request.role === "coder.primary" ? 30 : 10,
+      idleTimeoutSeconds: request.role === "coder.primary" ? settings.codingRuntime.modelIdleTimeoutSeconds : 90,
+    });
+    let result: GenerateResult;
+    try {
+      result = await selected.provider.generate(selected.model, request);
+    } finally {
+      await lease.release("inference-complete");
+    }
     await recordInference({ timestamp: new Date().toISOString(), workflow: request.workflow, role: request.role, modelId: selected.model.id, provider: selected.model.provider, fallbackUsed: selected.fallbackUsed, latencyMs: result.latencyMs, inputTokens: result.usage?.inputTokens, outputTokens: result.usage?.outputTokens, toolCallCount: result.toolCalls.length, retryCount: 0, status: "completed" });
     return result;
   } catch (error) {

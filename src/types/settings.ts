@@ -7,6 +7,16 @@ export type KaiStudioSettings = {
   codingBudgetOverrideMinutes: number | null;
   modelSearchRoots: string[];
   embeddingRuntime: EmbeddingRuntimeSettings;
+  codingRuntime: CodingRuntimeSettings;
+};
+
+export type CodingRuntimeSettings = {
+  executionMode: "single-agent" | "multi-agent-sequential";
+  inactiveAgentCachePolicy: "checkpoint-reconstruct" | "retain-bounded";
+  releaseIdleDiagnosticsBeforeCoding: boolean;
+  releaseIdleKaiLoreBeforeCoding: boolean;
+  modelIdleTimeoutSeconds: number;
+  memoryPressureFallback: "offer-16k" | "pause" | "single-agent";
 };
 
 export type EmbeddingRuntimeSettings = {

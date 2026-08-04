@@ -9,6 +9,7 @@ import { decideCodingLoop, getCodingLoop } from "@/lib/coding-loop-control";
 import { decideCodingExecutionBudget, getCodingExecutionBudget } from "@/lib/coding-execution-control";
 import { elapsedMinutes } from "@/lib/execution-budget";
 import { resolveRole } from "@/lib/models/runtime";
+import { codingRuntimeCoordinator } from "@/lib/coding-runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ async function consumeEvents(response: Response, onEvent: (event: ActiveBuildEve
 
 function addEvent(job: ActiveBuildJob, event: ActiveBuildEvent) {
   job.events.push(event);
-  for (const key of ["elapsedMinutes", "executionBudgetMinutes", "automaticExtensionMinutes", "userExtensionMinutes", "awaitingTimeDecision", "latestMeaningfulProgress", "currentAgent", "currentRole", "currentPhase", "contextUtilization", "currentRepositoryRevision", "activeReservations", "pendingHandoffs", "currentBlockers", "resourceWarning"] as const) {
+  for (const key of ["elapsedMinutes", "executionBudgetMinutes", "automaticExtensionMinutes", "userExtensionMinutes", "awaitingTimeDecision", "latestMeaningfulProgress", "currentAgent", "currentRole", "currentPhase", "contextUtilization", "currentRepositoryRevision", "activeReservations", "pendingHandoffs", "currentBlockers", "resourceWarning", "codingRuntime"] as const) {
     if (event[key] !== undefined) Object.assign(job, { [key]: event[key] });
   }
   job.updatedAt = new Date().toISOString();
@@ -60,6 +61,7 @@ function syncLoop(job: ActiveBuildJob) {
     job.latestMeaningfulProgress = budget.latestMeaningfulProgress;
     job.currentPhase = budget.phase;
   }
+  job.codingRuntime = codingRuntimeCoordinator.snapshot(job.pendingBuildId);
 }
 
 async function runJob(job: ActiveBuildJob, origin: string) {
