@@ -130,6 +130,11 @@ export type ImageGenerationResult = {
 export type ModelProvider = {
   id: ModelProviderId;
   health(model: ModelDefinition, signal?: AbortSignal): Promise<boolean>;
+  /**
+   * Optional, operation-specific readiness check. A model being visible to a
+   * runtime is not sufficient evidence that the runtime can execute images.
+   */
+  validateImageRuntime?(model: ModelDefinition, signal?: AbortSignal): Promise<void>;
   generate(model: ModelDefinition, request: GenerateRequest): Promise<GenerateResult>;
   generateImage?(model: ModelDefinition, request: ImageGenerationRequest): Promise<ImageGenerationResult>;
   stream?(model: ModelDefinition, request: GenerateRequest): Promise<ReadableStream<Uint8Array>>;

@@ -124,7 +124,14 @@ export async function generateForRole(request: GenerateRequest): Promise<Generat
 export async function generateImageForRole(role: "image.generator", request: ImageGenerationRequest): Promise<ImageGenerationResult> {
   const selected = await resolveRole(role, request.signal);
   if (!selected.provider.generateImage) throw new ModelRuntimeError(`The configured image provider (${selected.model.provider}) cannot generate images.`, "capability", selected.model.provider);
-  const lease = await generativeRuntimeManager.acquire({ model: selected.model, role, workflow: "kai-studio.image-generation", minimumWarmSeconds: 10, idleTimeoutSeconds: 90 });
+  if (!selected.provider.validateImageRuntime) {
+    throw new ModelRuntimeError(`The configured image provider (${selected.model.provider}) has no validated image-runtime adapter.`, "capability", selected.model.provider);
+  }
+  await selected.provider.validateImageRuntime(selected.model, request.signal);
+  // Image-only Ollama models expose a dedicated image API and must never be
+  // preloaded through Ollama's text-generation endpoint. The image adapter
+  // owns that first load while the residency manager still owns lifecycle.
+  const lease = await generativeRuntimeManager.acquire({ model: selected.model, role, workflow: "kai-studio.image-generation", minimumWarmSeconds: 10, idleTimeoutSeconds: 90, providerOwnsInitialLoad: true });
   try {
     return await selected.provider.generateImage(selected.model, request);
   } finally {

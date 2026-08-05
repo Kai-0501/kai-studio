@@ -93,3 +93,19 @@ test("different provider models remain separate residencies", async () => {
   await reviewLease.release();
   await manager.shutdown();
 });
+
+test("provider-owned image loads never use the shared text warmup", async () => {
+  let loads = 0;
+  const imageModel = { ...model, id: "image-test", displayName: "Image Test", providerModel: "x/z-image-turbo:latest", capabilities: ["image-generation"] };
+  const manager = new GenerativeRuntimeManager({
+    inspect: async () => ({ resident: false }),
+    ensureLoaded: async () => { loads += 1; return { resident: true }; },
+    unload: async () => {},
+    supportsExplicitUnload: () => true,
+  });
+  const lease = await manager.acquire({ model: imageModel, role: "image.generator", workflow: "image", providerOwnsInitialLoad: true, idleTimeoutSeconds: 30 });
+  assert.equal(loads, 0);
+  assert.equal(lease.snapshot().lifecycle, "active");
+  await lease.release();
+  await manager.shutdown();
+});

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeVisualIntent } from "../src/lib/image-generation/pipeline.ts";
-import { buildOllamaImageRequest, parseOllamaImageResponse } from "../src/lib/models/ollama-provider.ts";
+import { buildOllamaImageRequest, parseOllamaImageResponse, validateOllamaImageRuntime } from "../src/lib/models/ollama-provider.ts";
 
 test("image planner output preserves explicit mandatory requirements", () => {
   const intent = normalizeVisualIntent({
@@ -27,12 +27,36 @@ test("long constrained prompts use one complete JSON request envelope", () => {
   const serialised = JSON.stringify(request);
   assert.equal(JSON.parse(serialised).prompt, prompt);
   assert.equal(JSON.parse(serialised).size, "1024x576");
+  assert.equal(JSON.parse(serialised).n, 1);
   assert.equal(JSON.parse(serialised).response_format, "b64_json");
 });
 
 test("image adapter parses OpenAI-compatible base64 envelopes and rejects incomplete bodies safely", async () => {
   const image = "aW1hZ2UtYnl0ZXM=";
   assert.equal(await parseOllamaImageResponse(new Response(JSON.stringify({ data: [{ b64_json: image }] }), { status: 200, headers: { "content-type": "application/json" } })), image);
+  assert.equal(await parseOllamaImageResponse(new Response(JSON.stringify({ data: [{ url: `data:image/png;base64,${image}` }] }), { status: 200, headers: { "content-type": "application/json" } })), image);
+  await assert.rejects(() => parseOllamaImageResponse(new Response(JSON.stringify({ data: [{ url: "https://example.test/image.png" }] }), { status: 200, headers: { "content-type": "application/json" } })), /returned an image URL/);
   await assert.rejects(() => parseOllamaImageResponse(new Response('{"data":[', { status: 200, headers: { "content-type": "application/json" } })), /incomplete JSON response/);
   await assert.rejects(() => parseOllamaImageResponse(new Response("", { status: 200, headers: { "content-type": "application/json" } })), /empty response/);
+});
+
+test("Ollama image validation requires both model capability and the native image route", async () => {
+  const model = { providerModel: "x/z-image-turbo:latest" };
+  const requests = [];
+  await validateOllamaImageRuntime(model, undefined, async (url, init) => {
+    requests.push({ url: String(url), method: init?.method });
+    if (init?.method === "POST") return new Response(JSON.stringify({ capabilities: ["image"] }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(null, { status: 405, headers: { Allow: "POST" } });
+  });
+  assert.deepEqual(requests.map((entry) => entry.method), ["POST", "OPTIONS"]);
+  await assert.rejects(
+    () => validateOllamaImageRuntime(model, undefined, async () => new Response(JSON.stringify({ capabilities: ["completion"] }), { status: 200, headers: { "content-type": "application/json" } })),
+    /does not expose image-generation capability/,
+  );
+  await assert.rejects(
+    () => validateOllamaImageRuntime(model, undefined, async (_url, init) => init?.method === "POST"
+      ? new Response(JSON.stringify({ capabilities: ["image"] }), { status: 200, headers: { "content-type": "application/json" } })
+      : new Response(null, { status: 404 })),
+    /does not expose image generation/,
+  );
 });

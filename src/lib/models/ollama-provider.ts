@@ -19,15 +19,79 @@ function normaliseStatus(status: number) {
   return "provider" as const;
 }
 
+async function readJson(response: Response) {
+  try { return await response.json() as Record<string, unknown>; } catch { return {}; }
+}
+
+/**
+ * Validates Ollama's documented image contract without generating an image.
+ * `/api/show` confirms the installed model exposes the image capability;
+ * OPTIONS confirms the native OpenAI-compatible image route is present.
+ */
+export async function validateOllamaImageRuntime(model: ModelDefinition, signal?: AbortSignal, request: typeof fetch = fetch): Promise<void> {
+  let modelResponse: Response;
+  try {
+    modelResponse = await request(`${endpoint}/api/show`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: model.providerModel }),
+      signal: signal ?? AbortSignal.timeout(4_000),
+    });
+  } catch {
+    throw new ModelRuntimeError("The local Ollama runtime is not available.", "unavailable", "ollama", { operation: "model-validation" });
+  }
+  if (!modelResponse.ok) {
+    const details = await readJson(modelResponse);
+    const category = modelResponse.status === 404 ? "unavailable" : normaliseStatus(modelResponse.status);
+    throw new ModelRuntimeError(
+      modelResponse.status === 404 ? "The configured image model was not found in Ollama." : "Ollama could not validate the configured image model.",
+      category,
+      "ollama",
+      { operation: "model-validation", httpStatus: modelResponse.status, responseError: typeof details.error === "string" ? details.error.slice(0, 120) : undefined },
+    );
+  }
+  const modelMetadata = await readJson(modelResponse);
+  const capabilities = Array.isArray(modelMetadata.capabilities) ? modelMetadata.capabilities : [];
+  if (!capabilities.includes("image")) {
+    throw new ModelRuntimeError("The configured Ollama model does not expose image-generation capability.", "capability", "ollama", { operation: "model-capabilities" });
+  }
+
+  let routeResponse: Response;
+  try {
+    routeResponse = await request(`${endpoint}/v1/images/generations`, { method: "OPTIONS", signal: signal ?? AbortSignal.timeout(4_000) });
+  } catch {
+    throw new ModelRuntimeError("Ollama's image-generation endpoint is not reachable.", "unavailable", "ollama", { operation: "image-route-validation" });
+  }
+  // Ollama returns 405 with Allow: POST on versions that expose the route.
+  if (![200, 204, 405].includes(routeResponse.status)) {
+    const category = routeResponse.status === 404 ? "capability" : normaliseStatus(routeResponse.status);
+    throw new ModelRuntimeError(
+      routeResponse.status === 404 ? "This Ollama runtime does not expose image generation." : "Ollama's image-generation endpoint could not be validated.",
+      category,
+      "ollama",
+      { operation: "image-route-validation", httpStatus: routeResponse.status },
+    );
+  }
+}
+
 type OllamaImagePayload = {
   data?: Array<{ b64_json?: unknown; url?: unknown }>;
   image?: unknown;
 };
 
+function imageDataUrlToBase64(value: string) {
+  if (!value.startsWith("data:")) return null;
+  const separator = value.indexOf(",");
+  if (separator === -1 || !value.slice(0, separator).toLowerCase().includes(";base64")) return null;
+  const encoded = value.slice(separator + 1).trim();
+  return encoded || null;
+}
+
 export function buildOllamaImageRequest(model: ModelDefinition, request: ImageGenerationRequest) {
   return {
     model: model.providerModel,
     prompt: request.prompt,
+    n: 1,
     size: `${request.width}x${request.height}`,
     response_format: "b64_json",
     ...(request.seed === undefined ? {} : { seed: request.seed }),
@@ -70,11 +134,24 @@ export async function parseOllamaImageResponse(response: Response): Promise<stri
   } catch {
     throw new ModelRuntimeError("The local image runtime returned an incomplete JSON response.", "provider", "ollama", { ...responseDetails, bodyComplete: false });
   }
-  const image = payload.data?.[0]?.b64_json ?? payload.image;
-  if (typeof image !== "string" || !image.trim()) {
+  const base64 = payload.data?.[0]?.b64_json ?? payload.image;
+  if (typeof base64 === "string" && base64.trim()) return base64;
+
+  const url = payload.data?.[0]?.url;
+  if (typeof url === "string") {
+    const encoded = imageDataUrlToBase64(url);
+    if (encoded) return encoded;
+    throw new ModelRuntimeError(
+      "The local image runtime returned an image URL instead of the requested base64 payload.",
+      "provider",
+      "ollama",
+      { ...responseDetails, responseShape: "url" },
+    );
+  }
+  if (typeof base64 !== "string" || !base64.trim()) {
     throw new ModelRuntimeError("The local image runtime returned no image data.", "provider", "ollama", responseDetails);
   }
-  return image;
+  return base64;
 }
 
 export const ollamaProvider: ModelProvider = {
@@ -84,6 +161,9 @@ export const ollamaProvider: ModelProvider = {
       const response = await fetch(`${endpoint}/api/show`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: model.providerModel }), signal: signal ?? AbortSignal.timeout(3000) });
       return response.ok;
     } catch { return false; }
+  },
+  async validateImageRuntime(model, signal) {
+    await validateOllamaImageRuntime(model, signal);
   },
   async generate(model: ModelDefinition, request: GenerateRequest): Promise<GenerateResult> {
     const started = performance.now();

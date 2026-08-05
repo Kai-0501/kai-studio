@@ -12,6 +12,12 @@ export type GenerativeLeaseRequest = {
   agentSessionId?: string;
   minimumWarmSeconds?: number;
   idleTimeoutSeconds?: number;
+  /**
+   * Some specialised runtimes (for example image-only models) cannot be
+   * warmed through a text-generation request. Their provider operation owns
+   * the initial load instead. Residency is still tracked and released here.
+   */
+  providerOwnsInitialLoad?: boolean;
 };
 
 export type GenerativeRuntimeSnapshot = {
@@ -93,6 +99,7 @@ type State = GenerativeRuntimeSnapshot & {
   timer?: ReturnType<typeof setTimeout>;
   minimumWarmSeconds: number;
   idleTimeoutSeconds: number;
+  providerOwnsInitialLoad: boolean;
 };
 
 export type GenerativeRuntimeLease = {
@@ -131,13 +138,15 @@ export class GenerativeRuntimeManager {
         generation: 0,
         minimumWarmSeconds: request.minimumWarmSeconds ?? 30,
         idleTimeoutSeconds: request.idleTimeoutSeconds ?? 120,
+        providerOwnsInitialLoad: Boolean(request.providerOwnsInitialLoad),
       };
       this.states.set(key, state);
     }
+    if (request.providerOwnsInitialLoad) state.providerOwnsInitialLoad = true;
     if (state.timer) clearTimeout(state.timer);
     state.minimumWarmSeconds = Math.max(state.minimumWarmSeconds, request.minimumWarmSeconds ?? 0);
     state.idleTimeoutSeconds = Math.max(state.idleTimeoutSeconds, request.idleTimeoutSeconds ?? 0);
-    if (!state.weightsResident) {
+    if (!state.weightsResident && !request.providerOwnsInitialLoad) {
       state.lifecycle = "loading";
       try {
         const observation = await this.adapter.ensureLoaded(request.model, Math.max(state.minimumWarmSeconds, state.idleTimeoutSeconds));
@@ -150,6 +159,10 @@ export class GenerativeRuntimeManager {
         state.lastError = error instanceof Error ? error.message : "The model could not be loaded.";
         throw error;
       }
+    } else if (!state.weightsResident) {
+      // Do not send image-only models through /api/generate merely to warm
+      // them. The selected provider will load them using its native contract.
+      state.lifecycle = "warm";
     }
     state.leaseCount += 1;
     state.roleReferences[request.role] = (state.roleReferences[request.role] ?? 0) + 1;
@@ -200,6 +213,15 @@ export class GenerativeRuntimeManager {
     if (state.ownership !== "kai-managed" || !this.adapter.supportsExplicitUnload(state.model)) return false;
     state.lifecycle = "unloading";
     try {
+      if (state.providerOwnsInitialLoad) {
+        // Native image generation owns its own process lifecycle. Do not use
+        // the shared text-generation unload endpoint for an image-only model.
+        state.lifecycle = "cold";
+        state.weightsResident = false;
+        state.unloadAt = undefined;
+        state.lastReleaseReason = reason;
+        return true;
+      }
       await this.adapter.unload(state.model);
       state.lifecycle = "cold";
       state.weightsResident = false;
@@ -226,7 +248,7 @@ export class GenerativeRuntimeManager {
 
   snapshots() { return [...this.states.values()].map((state) => this.publicSnapshot(state)); }
   private publicSnapshot(state: State): GenerativeRuntimeSnapshot {
-    const snapshot = Object.fromEntries(Object.entries(state).filter(([key]) => !["model", "timer", "generation", "minimumWarmSeconds", "idleTimeoutSeconds"].includes(key))) as GenerativeRuntimeSnapshot;
+    const snapshot = Object.fromEntries(Object.entries(state).filter(([key]) => !["model", "timer", "generation", "minimumWarmSeconds", "idleTimeoutSeconds", "providerOwnsInitialLoad"].includes(key))) as GenerativeRuntimeSnapshot;
     return structuredClone(snapshot);
   }
   async shutdown() {

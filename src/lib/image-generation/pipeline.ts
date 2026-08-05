@@ -44,6 +44,7 @@ export class ImageGenerationError extends Error {
   readonly provider?: string;
   readonly errorClass: string;
   readonly retryAvailable: boolean;
+  readonly suggestedAction?: string;
 
   constructor(message: string, details: Omit<ImageGenerationError, "message" | "name" | "stack">) {
     super(message);
@@ -53,6 +54,7 @@ export class ImageGenerationError extends Error {
     this.provider = details.provider;
     this.errorClass = details.errorClass;
     this.retryAvailable = details.retryAvailable;
+    this.suggestedAction = details.suggestedAction;
   }
 }
 
@@ -147,6 +149,23 @@ function correction(intent: VisualIntent, result: ReviewResult) {
   return `Preserve the requirements already met. Correct only these verified gaps: ${[...failed, ...result.forbiddenMatches.map((item) => `remove ${item}`)].join("; ") || "improve required visual fidelity"}.`;
 }
 
+function imageRuntimeMessage(category: ModelRuntimeError["category"] | undefined) {
+  switch (category) {
+    case "timeout":
+      return { message: "Image generation took too long to complete.", suggestedAction: "Try again once. If it repeats, restart Ollama and check available memory." };
+    case "unavailable":
+      return { message: "The selected local image model is not available.", suggestedAction: "Open Settings and confirm that the image model is installed and enabled." };
+    case "capability":
+      return { message: "The selected model does not support local image generation.", suggestedAction: "Choose an installed image-generation model in Settings." };
+    case "configuration":
+      return { message: "Kai Studio's image model configuration needs attention.", suggestedAction: "Open Settings, choose an installed image model, and save the assignment." };
+    case "cancelled":
+      return { message: "Image generation was cancelled.", suggestedAction: "You can try the request again when ready." };
+    default:
+      return { message: "The local image runtime could not complete the request.", suggestedAction: "Try again once. If it repeats, restart Ollama and review the image-runtime details." };
+  }
+}
+
 export async function runBoundedImagePipeline(prompt: string, onStage?: (stage: string) => void) {
   const requestId = id();
   const startedAt = performance.now();
@@ -211,14 +230,22 @@ export async function runBoundedImagePipeline(prompt: string, onStage?: (stage: 
     const runtimeError = error instanceof ModelRuntimeError ? error : undefined;
     diagnostics.push({ requestId, stage: failureStage, success: false, payloadType: "none", expectedSchema: "kai-studio.image.v1", elapsedMs: Math.round(performance.now() - startedAt), errorClass: runtimeError?.category ?? (error instanceof Error ? error.name : "UnknownError"), message: error instanceof Error ? error.message.slice(0, 240) : "Unknown error", metadata: runtimeError?.details });
     const sourceMessage = error instanceof Error ? error.message : "Kai Studio could not create that image.";
+    const runtimeFailure = imageRuntimeMessage(runtimeError?.category);
     const userMessage = failureStage === "provider-request" || failureStage === "provider-response"
-      ? "The local image runtime could not complete the request."
+      ? runtimeFailure.message
       : failureStage === "vision-review"
         ? "Vision review could not complete, but any generated image was preserved."
         : failureStage === "visual-intent"
           ? "Image request could not be parsed before generation."
           : sourceMessage;
-    throw new ImageGenerationError(userMessage, { requestId, stage: failureStage, provider: failureStage === "provider-request" || failureStage === "provider-response" ? "ollama" : undefined, errorClass: error instanceof Error ? error.name : "UnknownError", retryAvailable: false });
+    throw new ImageGenerationError(userMessage, {
+      requestId,
+      stage: failureStage,
+      provider: runtimeError?.provider ?? (failureStage === "provider-request" || failureStage === "provider-response" ? "ollama" : undefined),
+      errorClass: runtimeError?.category ?? (error instanceof Error ? error.name : "UnknownError"),
+      retryAvailable: runtimeError?.category !== "configuration" && runtimeError?.category !== "capability",
+      suggestedAction: failureStage === "provider-request" || failureStage === "provider-response" ? runtimeFailure.suggestedAction : undefined,
+    });
   }
 }
 

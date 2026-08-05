@@ -22,10 +22,32 @@ Image-capable providers implement the central `generateImage` contract. The comp
 
 For the current Ollama adapter, image generation uses the non-streaming
 OpenAI-compatible image endpoint (`/v1/images/generations`) and expects an
-image envelope containing `data[0].b64_json`. It must not route image jobs to
-Ollama's text-generation endpoint. The adapter reads response text once before
+image envelope containing `data[0].b64_json` (or a base64 data URL when
+explicitly provided). A non-base64 URL is rejected rather than being mistaken
+for image bytes. It must not route image jobs to Ollama's
+text-generation endpoint. Image-only models also own their initial load and
+release through the native image runtime: the shared text-model residency
+manager records their lease but must never pre-warm or unload them through
+`/api/generate`. The adapter reads response text once before
 parsing so empty, truncated, non-JSON, HTTP, timeout, and cancellation cases
 remain distinguishable without storing private response content.
+
+### Runtime finding, August 2026
+
+The active local runtime for `x/z-image-turbo:latest` is Ollama's native
+image-generation runner, not a separate ComfyUI, Diffusers, or MLX server.
+The model is image-only, and its valid request contract is the Ollama
+OpenAI-compatible `POST /v1/images/generations` route with one request per
+candidate. Earlier shared-residency behaviour treated every Ollama model as a
+text model and sent a blank `/api/generate` warm-up. That was an invalid
+transport assumption for image-only models and could surface as a generic
+provider-request failure even when Ollama's image runner was healthy.
+
+The corrected boundary is deliberately small: the image provider performs the
+single native image request, while shared residency tracks the lease without
+issuing text warm-up or text unload calls. Failure taxonomy now retains the
+safe runtime category (`timeout`, `unavailable`, `capability`,
+`configuration`, or `provider`) and provides a recoverable user action.
 
 ### Safe diagnostic fields
 
