@@ -45,6 +45,7 @@ export class ImageGenerationError extends Error {
   readonly errorClass: string;
   readonly retryAvailable: boolean;
   readonly suggestedAction?: string;
+  readonly metadata?: Record<string, string | number | boolean | undefined>;
 
   constructor(message: string, details: Omit<ImageGenerationError, "message" | "name" | "stack">) {
     super(message);
@@ -55,6 +56,7 @@ export class ImageGenerationError extends Error {
     this.errorClass = details.errorClass;
     this.retryAvailable = details.retryAvailable;
     this.suggestedAction = details.suggestedAction;
+    this.metadata = details.metadata;
   }
 }
 
@@ -245,6 +247,7 @@ export async function runBoundedImagePipeline(prompt: string, onStage?: (stage: 
       errorClass: runtimeError?.category ?? (error instanceof Error ? error.name : "UnknownError"),
       retryAvailable: runtimeError?.category !== "configuration" && runtimeError?.category !== "capability",
       suggestedAction: failureStage === "provider-request" || failureStage === "provider-response" ? runtimeFailure.suggestedAction : undefined,
+      metadata: runtimeError?.details,
     });
   }
 }

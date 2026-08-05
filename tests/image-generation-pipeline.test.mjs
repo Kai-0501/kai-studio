@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeVisualIntent } from "../src/lib/image-generation/pipeline.ts";
-import { buildOllamaImageRequest, parseOllamaImageResponse, validateOllamaImageRuntime } from "../src/lib/models/ollama-provider.ts";
+import { buildOllamaImageRequest, describeOllamaImageRequest, parseOllamaImageResponse, validateOllamaImageRuntime } from "../src/lib/models/ollama-provider.ts";
 
 test("image planner output preserves explicit mandatory requirements", () => {
   const intent = normalizeVisualIntent({
@@ -29,6 +29,16 @@ test("long constrained prompts use one complete JSON request envelope", () => {
   assert.equal(JSON.parse(serialised).size, "1024x576");
   assert.equal(JSON.parse(serialised).n, 1);
   assert.equal(JSON.parse(serialised).response_format, "b64_json");
+  assert.equal("seed" in JSON.parse(serialised), false);
+  assert.deepEqual(describeOllamaImageRequest(JSON.parse(serialised)), {
+    requestBodyBytes: Buffer.byteLength(serialised),
+    requestFields: "model,n,prompt,response_format,size",
+    promptLength: prompt.length,
+    negativePromptLength: 0,
+    dimensions: "1024x576",
+    providerModel: "x/z-image-turbo",
+    optionalParameters: "none",
+  });
 });
 
 test("image adapter parses OpenAI-compatible base64 envelopes and rejects incomplete bodies safely", async () => {
@@ -38,6 +48,10 @@ test("image adapter parses OpenAI-compatible base64 envelopes and rejects incomp
   await assert.rejects(() => parseOllamaImageResponse(new Response(JSON.stringify({ data: [{ url: "https://example.test/image.png" }] }), { status: 200, headers: { "content-type": "application/json" } })), /returned an image URL/);
   await assert.rejects(() => parseOllamaImageResponse(new Response('{"data":[', { status: 200, headers: { "content-type": "application/json" } })), /incomplete JSON response/);
   await assert.rejects(() => parseOllamaImageResponse(new Response("", { status: 200, headers: { "content-type": "application/json" } })), /empty response/);
+  await assert.rejects(
+    async () => parseOllamaImageResponse(new Response(JSON.stringify({ error: "unsupported parameter: seed" }), { status: 400, headers: { "content-type": "application/json" } })),
+    (error) => error?.details?.responseError === "unsupported parameter: seed",
+  );
 });
 
 test("Ollama image validation requires both model capability and the native image route", async () => {

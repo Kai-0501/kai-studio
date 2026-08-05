@@ -128,6 +128,10 @@ export async function generateImageForRole(role: "image.generator", request: Ima
     throw new ModelRuntimeError(`The configured image provider (${selected.model.provider}) has no validated image-runtime adapter.`, "capability", selected.model.provider);
   }
   await selected.provider.validateImageRuntime(selected.model, request.signal);
+  // Z-Image is large enough that keeping the just-used planner warm can leave
+  // too little unified memory for the native image runner. Evict only idle,
+  // Kai-managed weights; active and externally managed models are protected.
+  await generativeRuntimeManager.evictIdle({ reason: "image-generation-capacity" });
   // Image-only Ollama models expose a dedicated image API and must never be
   // preloaded through Ollama's text-generation endpoint. The image adapter
   // owns that first load while the residency manager still owns lifecycle.

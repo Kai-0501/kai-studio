@@ -2,6 +2,10 @@ import type { CanonicalMessage, GenerateRequest, GenerateResult, ImageGeneration
 import { ModelRuntimeError } from "@/lib/models/types";
 
 const endpoint = process.env.KAI_OLLAMA_URL ?? "http://127.0.0.1:11434";
+// Native diffusion can take several minutes on a cold load or a dense scene.
+// Keep this bounded, but do not cancel an in-progress Ollama image runner at
+// the generic text-request threshold.
+const OLLAMA_IMAGE_REQUEST_TIMEOUT_MS = 480_000;
 
 function content(message: CanonicalMessage) {
   if (typeof message.content === "string") return { role: message.role, content: message.content };
@@ -79,6 +83,39 @@ type OllamaImagePayload = {
   image?: unknown;
 };
 
+type SafeImageRequestMetadata = Record<string, string | number | boolean | undefined>;
+
+function redactProviderErrorBody(body: string) {
+  const compact = body.replace(/\s+/g, " ").trim();
+  let candidate = compact;
+  try {
+    const parsed = JSON.parse(compact) as { error?: unknown; message?: unknown };
+    if (typeof parsed.error === "string") candidate = parsed.error;
+    else if (typeof parsed.message === "string") candidate = parsed.message;
+  } catch {
+    // Keep the provider's plain-text error only after the conservative redaction below.
+  }
+  return candidate
+    .replace(/\b(Bearer\s+)[^\s,;]+/gi, "$1[redacted]")
+    .replace(/\b(api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]")
+    .slice(0, 240) || undefined;
+}
+
+export function describeOllamaImageRequest(body: Record<string, unknown>): SafeImageRequestMetadata {
+  const prompt = typeof body.prompt === "string" ? body.prompt : "";
+  const negativePrompt = typeof body.negative_prompt === "string" ? body.negative_prompt : "";
+  const optionalFields = Object.keys(body).filter((field) => !["model", "prompt", "n", "size", "response_format"].includes(field));
+  return {
+    requestBodyBytes: Buffer.byteLength(JSON.stringify(body)),
+    requestFields: Object.keys(body).sort().join(","),
+    promptLength: prompt.length,
+    negativePromptLength: negativePrompt.length,
+    dimensions: typeof body.size === "string" ? body.size : undefined,
+    providerModel: typeof body.model === "string" ? body.model : undefined,
+    optionalParameters: optionalFields.join(",") || "none",
+  };
+}
+
 function imageDataUrlToBase64(value: string) {
   if (!value.startsWith("data:")) return null;
   const separator = value.indexOf(",");
@@ -94,7 +131,6 @@ export function buildOllamaImageRequest(model: ModelDefinition, request: ImageGe
     n: 1,
     size: `${request.width}x${request.height}`,
     response_format: "b64_json",
-    ...(request.seed === undefined ? {} : { seed: request.seed }),
   };
 }
 
@@ -118,7 +154,7 @@ export async function parseOllamaImageResponse(response: Response): Promise<stri
       `The local image runtime rejected the request (HTTP ${response.status}).`,
       normaliseStatus(response.status),
       "ollama",
-      responseDetails,
+      { ...responseDetails, responseError: redactProviderErrorBody(body) },
     );
   }
   if (!body.trim()) {
@@ -195,13 +231,15 @@ export const ollamaProvider: ModelProvider = {
   },
   async generateImage(model: ModelDefinition, request: ImageGenerationRequest): Promise<ImageGenerationResult> {
     const started = performance.now();
-    const signal = request.signal ?? AbortSignal.timeout(180_000);
+    const signal = request.signal ?? AbortSignal.timeout(OLLAMA_IMAGE_REQUEST_TIMEOUT_MS);
     let response: Response;
+    const body = buildOllamaImageRequest(model, request);
+    const requestDetails = describeOllamaImageRequest(body);
     try {
       response = await fetch(`${endpoint}/v1/images/generations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildOllamaImageRequest(model, request)),
+        body: JSON.stringify(body),
         signal,
       });
     } catch {
@@ -211,10 +249,18 @@ export const ollamaProvider: ModelProvider = {
         timedOut ? "The local image runtime took too long to respond." : aborted ? "The image request was cancelled." : "The local image runtime could not be reached.",
         timedOut ? "timeout" : aborted ? "cancelled" : "unavailable",
         "ollama",
-        { streamed: false, cancelState: aborted ? (timedOut ? "timeout" : "cancelled") : "not-cancelled" },
+        { ...requestDetails, streamed: false, providerTimeoutMs: OLLAMA_IMAGE_REQUEST_TIMEOUT_MS, cancelState: aborted ? (timedOut ? "timeout" : "cancelled") : "not-cancelled" },
       );
     }
-    const imageBase64 = await parseOllamaImageResponse(response);
+    let imageBase64: string;
+    try {
+      imageBase64 = await parseOllamaImageResponse(response);
+    } catch (error) {
+      if (error instanceof ModelRuntimeError) {
+        throw new ModelRuntimeError(error.message, error.category, error.provider, { ...requestDetails, ...error.details });
+      }
+      throw error;
+    }
     return { imageBase64, mimeType: "image/png", latencyMs: performance.now() - started, modelId: model.id, provider: "ollama" };
   },
 };

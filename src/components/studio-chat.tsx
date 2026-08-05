@@ -2,6 +2,7 @@
 
 import {
   ChangeEvent,
+  Fragment,
   FormEvent,
   KeyboardEvent,
   useEffect,
@@ -79,6 +80,7 @@ export function StudioChat({
     errorClass?: string;
     retryAvailable?: boolean;
     suggestedAction?: string;
+    metadata?: Record<string, string | number | boolean | undefined>;
   } | null>(null);
   const [runId, setRunId] = useState("");
   const [memoryStatus, setMemoryStatus] = useState<KaiMemoryStatus | null>(null);
@@ -469,6 +471,8 @@ export function StudioChat({
             provider?: string;
             errorClass?: string;
             retryAvailable?: boolean;
+            suggestedAction?: string;
+            metadata?: Record<string, string | number | boolean | undefined>;
           };
           id?: string;
           status?: "complete" | "unverified";
@@ -1022,6 +1026,7 @@ export function StudioChat({
                     <dt>Runtime</dt><dd>{imageErrorTechnical.provider ?? "Unavailable"}</dd>
                     <dt>Error class</dt><dd>{imageErrorTechnical.errorClass ?? "Unavailable"}</dd>
                     <dt>Retry</dt><dd>{imageErrorTechnical.retryAvailable ? "Available" : "Not available"}</dd>
+                    {Object.entries(imageErrorTechnical.metadata ?? {}).filter(([, value]) => value !== undefined).map(([key, value]) => <Fragment key={key}><dt>{key}</dt><dd>{String(value)}</dd></Fragment>)}
                   </dl>
                 </details>
               )}

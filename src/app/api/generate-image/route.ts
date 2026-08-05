@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     return Response.json({ id: result.record.id, image: result.image, status: result.record.status, attempts: result.record.attempts.map((attempt) => ({ number: attempt.number, status: attempt.status, review: attempt.review, compiledPrompt: attempt.compiledPrompt, provider: attempt.provider, model: attempt.model })), intent: result.record.intent, stages, diagnostics: result.diagnostics });
   } catch (error) {
     if (error instanceof ImageGenerationError) {
-      return Response.json({ error: error.message, technical: { requestId: error.requestId, stage: error.stage, provider: error.provider, errorClass: error.errorClass, retryAvailable: error.retryAvailable, suggestedAction: error.suggestedAction } }, { status: 500 });
+      return Response.json({ error: error.message, technical: { requestId: error.requestId, stage: error.stage, provider: error.provider, errorClass: error.errorClass, retryAvailable: error.retryAvailable, suggestedAction: error.suggestedAction, metadata: error.metadata } }, { status: 500 });
     }
     return Response.json({ error: error instanceof Error ? error.message : "Kai Studio could not create that image." }, { status: 500 });
   }
