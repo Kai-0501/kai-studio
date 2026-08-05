@@ -3,7 +3,7 @@ import { ollamaProvider } from "@/lib/models/ollama-provider";
 import { openAiCompatibleProvider } from "@/lib/models/openai-compatible-provider";
 import { geminiProvider } from "@/lib/models/gemini-provider";
 import { recordInference } from "@/lib/models/telemetry";
-import type { GenerateRequest, GenerateResult, ModelCapability, ModelDefinition, ModelProvider, ModelRole } from "@/lib/models/types";
+import type { GenerateRequest, GenerateResult, ImageGenerationRequest, ImageGenerationResult, ModelCapability, ModelDefinition, ModelProvider, ModelRole } from "@/lib/models/types";
 import { ModelRuntimeError } from "@/lib/models/types";
 import { readSettings } from "@/lib/settings-store";
 import { ensureManagedLocalModel, isManagedLocalModel } from "@/lib/local-model-runtime";
@@ -24,6 +24,9 @@ const assignmentKeyByRole: Partial<Record<ModelRole, keyof ModelAssignments>> = 
   "security.postflight": "security",
   "editorial.primary": "editorial",
   "vision.extractor": "vision",
+  "vision.reviewer": "vision",
+  "image.planner": "imagePlanner",
+  "image.generator": "image",
   "diagnostics.primary": "diagnostics",
   "diagnostics.parser": "diagnosticsParser",
   "progress.assessor": "progressAssessor",
@@ -113,6 +116,19 @@ export async function generateForRole(request: GenerateRequest): Promise<Generat
     const normalized = error instanceof ModelRuntimeError ? error : new ModelRuntimeError(error instanceof Error ? error.message : "Model inference failed.", "provider", selected?.model.provider);
     await recordInference({ timestamp: new Date().toISOString(), workflow: request.workflow, role: request.role, modelId: selected?.model.id ?? "unresolved", provider: selected?.model.provider ?? "ollama", fallbackUsed: selected?.fallbackUsed ?? false, latencyMs: performance.now() - started, toolCallCount: 0, retryCount: 0, status: "failed", errorCategory: normalized.category });
     throw normalized;
+  }
+}
+
+/** Image generation uses the same registry, availability checks, and runtime
+ * leases as language inference. Components never choose a provider directly. */
+export async function generateImageForRole(role: "image.generator", request: ImageGenerationRequest): Promise<ImageGenerationResult> {
+  const selected = await resolveRole(role, request.signal);
+  if (!selected.provider.generateImage) throw new ModelRuntimeError(`The configured image provider (${selected.model.provider}) cannot generate images.`, "capability", selected.model.provider);
+  const lease = await generativeRuntimeManager.acquire({ model: selected.model, role, workflow: "kai-studio.image-generation", minimumWarmSeconds: 10, idleTimeoutSeconds: 90 });
+  try {
+    return await selected.provider.generateImage(selected.model, request);
+  } finally {
+    await lease.release("image-generation-complete");
   }
 }
 

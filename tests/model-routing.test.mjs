@@ -27,3 +27,13 @@ test("local-only routes reject cloud models", () => {
   assert.ok(cloud);
   assert.equal(modelSatisfiesRoute({ ...cloud, enabled: true }, ["orchestration"], true), false);
 });
+
+test("bounded image roles use the central registry and capability routes", () => {
+  const planner = modelRegistry.get(roleRoutes["image.planner"].primary);
+  const generator = modelRegistry.get(roleRoutes["image.generator"].primary);
+  const reviewer = modelRegistry.get(roleRoutes["vision.reviewer"].primary);
+  assert.ok(planner && generator && reviewer);
+  assert.equal(modelSatisfiesRoute(generator, ["image-generation"], true), true);
+  assert.equal(modelSatisfiesRoute(planner, ["chat", "structured-output"], true), true);
+  assert.equal(modelSatisfiesRoute(reviewer, ["vision", "structured-output"], true), true);
+});

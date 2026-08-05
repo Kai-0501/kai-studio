@@ -28,6 +28,16 @@ const defaultSettings: KaiStudioSettings = {
     modelIdleTimeoutSeconds: 180,
     memoryPressureFallback: "offer-16k",
   },
+  imageGeneration: {
+    autoReview: true,
+    maxCorrectiveRetries: 2,
+    mandatoryConfidenceThreshold: 0.8,
+    retryPreferredRequirements: false,
+    reviewTimeoutSeconds: 45,
+    saveAllAttempts: true,
+    preserveCompiledPrompts: true,
+    visionUnavailableBehaviour: "return-unverified",
+  },
 };
 
 export async function readSettings(): Promise<KaiStudioSettings> {
@@ -53,7 +63,8 @@ export async function readSettings(): Promise<KaiStudioSettings> {
       coding: { ...defaultSettings.embeddingRuntime.coding, ...(savedRuntime?.coding ?? {}) },
     };
     const codingRuntime = { ...defaultSettings.codingRuntime, ...(saved.codingRuntime ?? {}) };
-    return { ...defaultSettings, ...saved, embeddingRuntime: runtime, codingRuntime, modelAssignments: assignments, modelSearchRoots: Array.isArray(saved.modelSearchRoots) ? saved.modelSearchRoots.filter((root): root is string => typeof root === "string") : [] };
+    const imageGeneration = { ...defaultSettings.imageGeneration, ...(saved.imageGeneration ?? {}) };
+    return { ...defaultSettings, ...saved, embeddingRuntime: runtime, codingRuntime, imageGeneration, modelAssignments: assignments, modelSearchRoots: Array.isArray(saved.modelSearchRoots) ? saved.modelSearchRoots.filter((root): root is string => typeof root === "string") : [] };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultSettings;
     throw error;

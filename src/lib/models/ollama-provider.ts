@@ -1,4 +1,4 @@
-import type { CanonicalMessage, GenerateRequest, GenerateResult, ModelDefinition, ModelProvider } from "@/lib/models/types";
+import type { CanonicalMessage, GenerateRequest, GenerateResult, ImageGenerationRequest, ImageGenerationResult, ModelDefinition, ModelProvider } from "@/lib/models/types";
 import { ModelRuntimeError } from "@/lib/models/types";
 
 const endpoint = process.env.KAI_OLLAMA_URL ?? "http://127.0.0.1:11434";
@@ -54,5 +54,18 @@ export const ollamaProvider: ModelProvider = {
     const toolCalls = (payload.message?.tool_calls ?? []).flatMap((call, index) => call.function?.name ? [{ id: `ollama-${index}`, name: call.function.name, arguments: call.function.arguments ?? {} }] : []);
     if (!text && !toolCalls.length) throw new ModelRuntimeError("The local model returned an empty response.", "provider", "ollama");
     return { text, toolCalls, usage: { inputTokens: payload.prompt_eval_count, outputTokens: payload.eval_count }, latencyMs: performance.now() - started, modelId: model.id, provider: "ollama" };
+  },
+  async generateImage(model: ModelDefinition, request: ImageGenerationRequest): Promise<ImageGenerationResult> {
+    const started = performance.now();
+    let response: Response;
+    try {
+      response = await fetch(`${endpoint}/api/generate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: model.providerModel, prompt: request.prompt, stream: false, options: { width: request.width, height: request.height, ...(request.seed === undefined ? {} : { seed: request.seed }) } }), signal: request.signal ?? AbortSignal.timeout(180_000) });
+    } catch (error) {
+      throw new ModelRuntimeError(error instanceof Error ? error.message : "The local image provider could not be reached.", request.signal?.aborted ? "cancelled" : "unavailable", "ollama");
+    }
+    if (!response.ok) throw new ModelRuntimeError((await response.text()).slice(0, 2000) || "The local image provider failed.", normaliseStatus(response.status), "ollama");
+    const payload = await response.json() as { image?: string };
+    if (!payload.image) throw new ModelRuntimeError("The local image provider returned no image.", "provider", "ollama");
+    return { imageBase64: payload.image, mimeType: "image/png", latencyMs: performance.now() - started, modelId: model.id, provider: "ollama" };
   },
 };

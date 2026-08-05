@@ -11,7 +11,8 @@ export type ModelCapability =
   | "tools"
   | "vision"
   | "reasoning"
-  | "embedding";
+  | "embedding"
+  | "image-generation";
 
 export type ModelRole =
   | "coder.primary"
@@ -21,6 +22,9 @@ export type ModelRole =
   | "orchestrator.cloud"
   | "chat.default"
   | "vision.extractor"
+  | "vision.reviewer"
+  | "image.planner"
+  | "image.generator"
   | "diagnostics.primary"
   | "diagnostics.parser"
   | "progress.assessor"
@@ -107,10 +111,27 @@ export type GenerateResult = {
   provider: ModelProviderId;
 };
 
+export type ImageGenerationRequest = {
+  prompt: string;
+  width: number;
+  height: number;
+  seed?: number;
+  signal?: AbortSignal;
+};
+
+export type ImageGenerationResult = {
+  imageBase64: string;
+  mimeType: string;
+  latencyMs: number;
+  modelId: string;
+  provider: ModelProviderId;
+};
+
 export type ModelProvider = {
   id: ModelProviderId;
   health(model: ModelDefinition, signal?: AbortSignal): Promise<boolean>;
   generate(model: ModelDefinition, request: GenerateRequest): Promise<GenerateResult>;
+  generateImage?(model: ModelDefinition, request: ImageGenerationRequest): Promise<ImageGenerationResult>;
   stream?(model: ModelDefinition, request: GenerateRequest): Promise<ReadableStream<Uint8Array>>;
 };
 

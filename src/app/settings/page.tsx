@@ -33,6 +33,7 @@ export default function SettingsPage() {
   const [modelSearchRoots, setModelSearchRoots] = useState<string[]>([]);
   const [embeddingRuntime, setEmbeddingRuntime] = useState<KaiStudioSettings["embeddingRuntime"] | null>(null);
   const [codingRuntime, setCodingRuntime] = useState<KaiStudioSettings["codingRuntime"] | null>(null);
+  const [imageGeneration, setImageGeneration] = useState<KaiStudioSettings["imageGeneration"] | null>(null);
   const [codingRuntimeStatus, setCodingRuntimeStatus] = useState<{ jobs?: Array<{ jobId: string; status: string; activeAgent?: string; weightResidency: string; memoryPressure: string; sessions: Array<{ role: string; status: string; kvCache: string; contextLimit: number }> }>; generative?: Array<{ displayName: string; lifecycle: string; leaseCount: number; ownership: string }> } | null>(null);
   const [modelRootDraft, setModelRootDraft] = useState("");
   const [validatingModel, setValidatingModel] = useState<string | null>(null);
@@ -67,6 +68,7 @@ export default function SettingsPage() {
       setModelSearchRoots(settings.modelSearchRoots ?? []);
       setEmbeddingRuntime(settings.embeddingRuntime);
       setCodingRuntime(settings.codingRuntime);
+      setImageGeneration(settings.imageGeneration);
       const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
       setMemory(currentMemory);
       setMemoryDraft(currentMemory.content);
@@ -104,6 +106,7 @@ export default function SettingsPage() {
         setModelSearchRoots(settings.modelSearchRoots ?? []);
         setEmbeddingRuntime(settings.embeddingRuntime);
         setCodingRuntime(settings.codingRuntime);
+        setImageGeneration(settings.imageGeneration);
         const currentMemory = (await memoryResponse.json()) as KaiMemoryStatus;
         setMemory(currentMemory);
         setMemoryDraft(currentMemory.content);
@@ -134,6 +137,7 @@ export default function SettingsPage() {
         modelSearchRoots,
         ...(embeddingRuntime ? { embeddingRuntime } : {}),
         ...(codingRuntime ? { codingRuntime } : {}),
+        ...(imageGeneration ? { imageGeneration } : {}),
       }),
     });
 
@@ -455,6 +459,22 @@ export default function SettingsPage() {
                 <p className="mt-2 text-xs text-slate-600">Hybrid retrieval {retrieval?.coding.hybridEnabled ? "enabled" : "unavailable"} · Reranker: {retrieval?.coding.reranker ?? "not configured"}</p>
               </div>
             </div>
+          </section>
+
+          <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">
+            <h2 className="font-semibold">Bounded image generation</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Every image follows one local pipeline: visual brief, validation, generation, vision review, and at most two corrections. There is no raw generation bypass.</p>
+            {imageGeneration ? <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-[#0b0f18] p-4 text-sm"><span>Review every image</span><input type="checkbox" checked={imageGeneration.autoReview} onChange={(event) => setImageGeneration({ ...imageGeneration, autoReview: event.target.checked })} className="accent-sky-400" /></label>
+              <label className="rounded-xl border border-white/10 bg-[#0b0f18] p-4 text-sm">Corrective retries<select value={imageGeneration.maxCorrectiveRetries} onChange={(event) => setImageGeneration({ ...imageGeneration, maxCorrectiveRetries: Number(event.target.value) as 0 | 1 | 2 })} className="mt-2 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2 text-slate-200"><option value={0}>No retries</option><option value={1}>1 retry</option><option value={2}>2 retries (default)</option></select></label>
+              <label className="rounded-xl border border-white/10 bg-[#0b0f18] p-4 text-sm">Mandatory confidence threshold<input type="number" min="0" max="1" step="0.05" value={imageGeneration.mandatoryConfidenceThreshold} onChange={(event) => setImageGeneration({ ...imageGeneration, mandatoryConfidenceThreshold: Math.max(0, Math.min(1, Number(event.target.value) || 0)) })} className="mt-2 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2 text-slate-200" /></label>
+              <label className="rounded-xl border border-white/10 bg-[#0b0f18] p-4 text-sm">Vision unavailable<select value={imageGeneration.visionUnavailableBehaviour} onChange={(event) => setImageGeneration({ ...imageGeneration, visionUnavailableBehaviour: event.target.value as "return-unverified" | "fail" })} className="mt-2 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2 text-slate-200"><option value="return-unverified">Return candidate marked unverified</option><option value="fail">Fail safely</option></select></label>
+              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-[#0b0f18] p-4 text-sm"><span>Retry preferred requirements</span><input type="checkbox" checked={imageGeneration.retryPreferredRequirements} onChange={(event) => setImageGeneration({ ...imageGeneration, retryPreferredRequirements: event.target.checked })} className="accent-sky-400" /></label>
+              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-[#0b0f18] p-4 text-sm"><span>Save attempt details</span><input type="checkbox" checked={imageGeneration.saveAllAttempts} onChange={(event) => setImageGeneration({ ...imageGeneration, saveAllAttempts: event.target.checked })} className="accent-sky-400" /></label>
+              <label className="rounded-xl border border-white/10 bg-[#0b0f18] p-4 text-sm">Review timeout (seconds)<input type="number" min="10" max="180" value={imageGeneration.reviewTimeoutSeconds} onChange={(event) => setImageGeneration({ ...imageGeneration, reviewTimeoutSeconds: Math.max(10, Math.min(180, Number(event.target.value) || 10)) })} className="mt-2 w-full rounded-lg border border-white/10 bg-[#111620] px-3 py-2 text-slate-200" /></label>
+              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-[#0b0f18] p-4 text-sm"><span>Preserve compiled prompts locally</span><input type="checkbox" checked={imageGeneration.preserveCompiledPrompts} onChange={(event) => setImageGeneration({ ...imageGeneration, preserveCompiledPrompts: event.target.checked })} className="accent-sky-400" /></label>
+            </div> : null}
+            <div className="mt-5 flex justify-end border-t border-white/10 pt-5"><button type="button" onClick={saveDefault} disabled={saving || !imageGeneration} className="rounded-xl border border-sky-400/25 bg-sky-400/15 px-5 py-2.5 text-sm font-medium text-sky-200 hover:bg-sky-400/25 disabled:opacity-40">{saving ? "Saving…" : "Save image settings"}</button></div>
           </section>
 
           <section className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/[0.035] p-6">

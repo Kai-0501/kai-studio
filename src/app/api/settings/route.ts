@@ -30,6 +30,7 @@ export async function PUT(request: Request) {
     modelSearchRoots?: unknown;
     embeddingRuntime?: unknown;
     codingRuntime?: unknown;
+    imageGeneration?: unknown;
   };
 
   if (
@@ -48,6 +49,11 @@ export async function PUT(request: Request) {
   }
   if (body.embeddingRuntime !== undefined && (typeof body.embeddingRuntime !== "object" || body.embeddingRuntime === null)) return Response.json({ error: "Embedding runtime settings are invalid." }, { status: 400 });
   if (body.codingRuntime !== undefined && (typeof body.codingRuntime !== "object" || body.codingRuntime === null)) return Response.json({ error: "Coding runtime settings are invalid." }, { status: 400 });
+  if (body.imageGeneration !== undefined && (typeof body.imageGeneration !== "object" || body.imageGeneration === null)) return Response.json({ error: "Image-generation settings are invalid." }, { status: 400 });
+  if (body.imageGeneration && typeof body.imageGeneration === "object") {
+    const image = body.imageGeneration as Partial<import("@/types/settings").ImageGenerationSettings>;
+    if (typeof image.autoReview !== "boolean" || ![0, 1, 2].includes(image.maxCorrectiveRetries ?? -1) || typeof image.mandatoryConfidenceThreshold !== "number" || image.mandatoryConfidenceThreshold < 0 || image.mandatoryConfidenceThreshold > 1 || typeof image.retryPreferredRequirements !== "boolean" || typeof image.reviewTimeoutSeconds !== "number" || image.reviewTimeoutSeconds < 10 || image.reviewTimeoutSeconds > 180 || typeof image.saveAllAttempts !== "boolean" || typeof image.preserveCompiledPrompts !== "boolean" || !["return-unverified", "fail"].includes(image.visionUnavailableBehaviour ?? "")) return Response.json({ error: "Image-generation settings are invalid." }, { status: 400 });
+  }
   if (body.codingRuntime && typeof body.codingRuntime === "object") {
     const policy = body.codingRuntime as Partial<import("@/types/settings").CodingRuntimeSettings>;
     if (policy.executionMode !== "single-agent" && policy.executionMode !== "multi-agent-sequential") return Response.json({ error: "Choose Single Agent or Multi-Agent Sequential." }, { status: 400 });
@@ -99,5 +105,6 @@ export async function PUT(request: Request) {
     ...(Array.isArray(body.modelSearchRoots) ? { modelSearchRoots: [...new Set(body.modelSearchRoots.map((root) => path.resolve(root.trim())))] } : {}),
     ...(body.embeddingRuntime && typeof body.embeddingRuntime === "object" ? { embeddingRuntime: body.embeddingRuntime as import("@/types/settings").EmbeddingRuntimeSettings } : {}),
     ...(body.codingRuntime && typeof body.codingRuntime === "object" ? { codingRuntime: body.codingRuntime as import("@/types/settings").CodingRuntimeSettings } : {}),
+    ...(body.imageGeneration && typeof body.imageGeneration === "object" ? { imageGeneration: body.imageGeneration as import("@/types/settings").ImageGenerationSettings } : {}),
   }));
 }

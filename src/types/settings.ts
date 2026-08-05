@@ -8,6 +8,7 @@ export type KaiStudioSettings = {
   modelSearchRoots: string[];
   embeddingRuntime: EmbeddingRuntimeSettings;
   codingRuntime: CodingRuntimeSettings;
+  imageGeneration: ImageGenerationSettings;
 };
 
 export type CodingRuntimeSettings = {
@@ -22,6 +23,17 @@ export type CodingRuntimeSettings = {
 export type EmbeddingRuntimeSettings = {
   kaiLore: EmbeddingRuntimePolicy;
   coding: EmbeddingRuntimePolicy;
+};
+
+export type ImageGenerationSettings = {
+  autoReview: boolean;
+  maxCorrectiveRetries: 0 | 1 | 2;
+  mandatoryConfidenceThreshold: number;
+  retryPreferredRequirements: boolean;
+  reviewTimeoutSeconds: number;
+  saveAllAttempts: boolean;
+  preserveCompiledPrompts: boolean;
+  visionUnavailableBehaviour: "return-unverified" | "fail";
 };
 
 export type EmbeddingRuntimePolicy = {
@@ -41,6 +53,8 @@ export type ModelAssignments = {
   coding: string;
   security: string;
   vision: string;
+  imagePlanner: string;
+  image: string;
   diagnostics: string;
   diagnosticsParser: string;
   progressAssessor: string;
