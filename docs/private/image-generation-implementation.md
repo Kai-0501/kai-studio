@@ -20,6 +20,21 @@ The initial candidate plus at most two corrective candidates form one generation
 
 Image-capable providers implement the central `generateImage` contract. The compiler reads the resolved provider’s capability profile before producing a prompt. Provider adapters own request transport and result normalisation; the Chat component must never name or call a provider directly.
 
+For the current Ollama adapter, image generation uses the non-streaming
+OpenAI-compatible image endpoint (`/v1/images/generations`) and expects an
+image envelope containing `data[0].b64_json`. It must not route image jobs to
+Ollama's text-generation endpoint. The adapter reads response text once before
+parsing so empty, truncated, non-JSON, HTTP, timeout, and cancellation cases
+remain distinguishable without storing private response content.
+
+### Safe diagnostic fields
+
+The pipeline may retain: request ID, pipeline stage, success/failure, elapsed
+time, payload type and length, provider error class, HTTP status, content type,
+response byte count, streaming mode, and cancellation state. It must not retain
+raw prompts, image data, artifact paths, credentials, or raw provider errors in
+the UI diagnostic payload.
+
 ## Operational checks
 
 Before changing this pipeline, verify: structured-plan validation fails before provider invocation; generated records survive restart; the selected candidate has review evidence or an explicit unverified state; retries never exceed the configured maximum; and the generator, planner, and reviewer assignments resolve through the registry without a silent substitution.

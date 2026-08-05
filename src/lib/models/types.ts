@@ -146,6 +146,8 @@ export class ModelRuntimeError extends Error {
     | "cancelled"
     | "provider";
   readonly provider?: ModelProviderId;
+  /** Safe runtime metadata for diagnostics; never include prompts, paths, or secrets. */
+  readonly details?: Record<string, string | number | boolean | undefined>;
 
   constructor(
     message: string,
@@ -159,10 +161,12 @@ export class ModelRuntimeError extends Error {
       | "cancelled"
       | "provider",
     provider?: ModelProviderId,
+    details?: Record<string, string | number | boolean | undefined>,
   ) {
     super(message);
     this.name = "ModelRuntimeError";
     this.category = category;
     this.provider = provider;
+    this.details = details;
   }
 }

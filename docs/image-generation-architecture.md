@@ -36,6 +36,20 @@ behind the model runtime. Components request roles (`image.planner`,
 model in Settings preserves these stages and does not create a quick-generation
 bypass.
 
+## Image-runtime transport
+
+An image-capable runtime receives a single non-streaming, provider-compatible
+image request and returns a normalised image envelope. Kai Studio reads that
+response once, validates its content type and image payload, and records only
+safe operational metadata (request ID, stage, elapsed time, response class, and
+payload size). It never exposes prompts, image bytes, local paths, or runtime
+credentials in diagnostic UI.
+
+If generation succeeds but vision review fails, the candidate image is retained
+as **unverified** according to the configured review policy. A runtime failure
+is shown as a concise user message with optional technical details instead of a
+raw provider error.
+
 ## Human controls
 
 The normal chat surface shows only progress and the selected result. An optional

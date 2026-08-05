@@ -1,4 +1,4 @@
-import { runBoundedImagePipeline } from "@/lib/image-generation/pipeline";
+import { ImageGenerationError, runBoundedImagePipeline } from "@/lib/image-generation/pipeline";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,8 +9,11 @@ export async function POST(request: Request) {
     if (typeof body.prompt !== "string") return Response.json({ error: "Describe the image you want to create." }, { status: 400 });
     const stages: string[] = [];
     const result = await runBoundedImagePipeline(body.prompt, (stage) => stages.push(stage));
-    return Response.json({ id: result.record.id, image: result.image, status: result.record.status, attempts: result.record.attempts.map((attempt) => ({ number: attempt.number, status: attempt.status, review: attempt.review, compiledPrompt: attempt.compiledPrompt, provider: attempt.provider, model: attempt.model })), intent: result.record.intent, stages });
+    return Response.json({ id: result.record.id, image: result.image, status: result.record.status, attempts: result.record.attempts.map((attempt) => ({ number: attempt.number, status: attempt.status, review: attempt.review, compiledPrompt: attempt.compiledPrompt, provider: attempt.provider, model: attempt.model })), intent: result.record.intent, stages, diagnostics: result.diagnostics });
   } catch (error) {
+    if (error instanceof ImageGenerationError) {
+      return Response.json({ error: error.message, technical: { requestId: error.requestId, stage: error.stage, provider: error.provider, errorClass: error.errorClass, retryAvailable: error.retryAvailable } }, { status: 500 });
+    }
     return Response.json({ error: error instanceof Error ? error.message : "Kai Studio could not create that image." }, { status: 500 });
   }
 }

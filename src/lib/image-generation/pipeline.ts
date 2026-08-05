@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { generateForRole, generateImageForRole, resolveRole } from "@/lib/models/runtime";
+import { ModelRuntimeError } from "@/lib/models/types";
 import { parseModelJson } from "@/lib/model-json";
 import { readSettings } from "@/lib/settings-store";
 
@@ -34,6 +35,26 @@ export type VisualIntent = {
 export type ImageAttempt = { number: number; provider: string; model: string; compiledPrompt: string; artifactPath: string; status: "generated" | "reviewed" | "unverified" | "failed"; review?: ReviewResult; correction?: string; createdAt: string };
 export type ReviewResult = { score: number; requirements: Array<{ id: string; status: "satisfied" | "failed" | "uncertain"; confidence: number; evidence: string }>; forbiddenMatches: string[]; overallNotes: string };
 export type ImageGenerationRecord = { id: string; status: "complete" | "unverified" | "failed"; createdAt: string; updatedAt: string; intent: VisualIntent; attempts: ImageAttempt[]; selectedAttempt?: number; error?: string };
+export type ImageGenerationStage = "request-accepted" | "visual-intent" | "intent-validation" | "prompt-compilation" | "provider-request" | "provider-response" | "artifact-validation" | "vision-review" | "retry-decision";
+export type ImageGenerationDiagnostic = { requestId: string; stage: ImageGenerationStage; success: boolean; payloadType: string; payloadLength?: number; expectedSchema: string; elapsedMs: number; errorClass?: string; message?: string; metadata?: Record<string, string | number | boolean | undefined> };
+
+export class ImageGenerationError extends Error {
+  readonly requestId: string;
+  readonly stage: ImageGenerationStage;
+  readonly provider?: string;
+  readonly errorClass: string;
+  readonly retryAvailable: boolean;
+
+  constructor(message: string, details: Omit<ImageGenerationError, "message" | "name" | "stack">) {
+    super(message);
+    this.name = "ImageGenerationError";
+    this.requestId = details.requestId;
+    this.stage = details.stage;
+    this.provider = details.provider;
+    this.errorClass = details.errorClass;
+    this.retryAvailable = details.retryAvailable;
+  }
+}
 
 type ProviderProfile = { provider: string; supportsNegativePrompt: boolean; maxPromptLength: number; supportedAspectRatios: VisualIntent["aspectRatio"][]; width: number; height: number };
 const genericOllamaImageProfile: ProviderProfile = { provider: "ollama", supportsNegativePrompt: false, maxPromptLength: 7_500, supportedAspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16"], width: 1024, height: 1024 };
@@ -127,49 +148,78 @@ function correction(intent: VisualIntent, result: ReviewResult) {
 }
 
 export async function runBoundedImagePipeline(prompt: string, onStage?: (stage: string) => void) {
-  if (!prompt.trim() || prompt.length > 8000) throw new Error("Describe the image in 1 to 8,000 characters.");
-  onStage?.("Understanding your request…");
-  const intent = await plan(prompt.trim());
-  if (!intent) throw new Error("Kai Studio could not create a reliable visual brief. Please clarify the main subject and required details.");
-  const selected = await resolveRole("image.generator");
-  const profile: ProviderProfile = selected.model.provider === "ollama" ? genericOllamaImageProfile : { ...genericOllamaImageProfile, provider: selected.model.provider };
-  deterministicValidate(intent, profile);
-  const settings = await readSettings();
-  const record: ImageGenerationRecord = { id: id(), status: "failed", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), intent, attempts: [] };
-  const maxAttempts = 1 + settings.imageGeneration.maxCorrectiveRetries;
-  let best: ImageAttempt | undefined;
-  let previousReview: ReviewResult | undefined;
-  for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber += 1) {
-    onStage?.(attemptNumber === 1 ? "Preparing image instructions…" : `Correcting required details (${attemptNumber}/${maxAttempts})…`);
-    const compiledPrompt = compile(intent, profile, previousReview ? correction(intent, previousReview) : undefined);
-    onStage?.("Generating image…");
-    const dimensionsForAttempt = dimensions(intent.aspectRatio, profile);
-    const generated = await generateImageForRole("image.generator", { prompt: compiledPrompt, ...dimensionsForAttempt });
-    const artifactPath = await writeArtifact(record.id, attemptNumber, generated.imageBase64);
-    const item: ImageAttempt = { number: attemptNumber, provider: generated.provider, model: generated.modelId, compiledPrompt: settings.imageGeneration.preserveCompiledPrompts ? compiledPrompt : "[not retained]", artifactPath, status: "generated", createdAt: new Date().toISOString() };
-    record.attempts.push(item);
-    if (!settings.imageGeneration.autoReview) { item.status = "unverified"; best = item; break; }
-    onStage?.("Checking requirements…");
-    try {
-      const reviewed = await review(intent, generated.imageBase64, settings.imageGeneration.reviewTimeoutSeconds * 1000);
-      item.review = reviewed; item.status = "reviewed";
-      if (!best || reviewed.score > (best.review?.score ?? -1)) best = item;
-      if (reviewPasses(intent, reviewed, settings.imageGeneration.mandatoryConfidenceThreshold, settings.imageGeneration.retryPreferredRequirements)) break;
-      previousReview = reviewed;
-    } catch (error) {
-      if (settings.imageGeneration.visionUnavailableBehaviour === "fail") throw error;
-      item.status = "unverified"; best = item; break;
+  const requestId = id();
+  const startedAt = performance.now();
+  let currentStage: ImageGenerationStage = "request-accepted";
+  const diagnostics: ImageGenerationDiagnostic[] = [];
+  const mark = (stage: ImageGenerationStage, display: string, payloadType: string, payloadLength?: number) => {
+    currentStage = stage;
+    diagnostics.push({ requestId, stage, success: true, payloadType, payloadLength, expectedSchema: "kai-studio.image.v1", elapsedMs: Math.round(performance.now() - startedAt) });
+    onStage?.(display);
+  };
+  try {
+    if (!prompt.trim() || prompt.length > 8000) throw new Error("Describe the image in 1 to 8,000 characters.");
+    mark("request-accepted", "Understanding your request…", "text", prompt.length);
+    mark("visual-intent", "Understanding your request…", "structured-intent-request", prompt.length);
+    const intent = await plan(prompt.trim());
+    if (!intent) throw new Error("Kai Studio could not create a reliable visual brief. Please clarify the main subject and required details.");
+    mark("intent-validation", "Preparing image instructions…", "visual-intent", intent.requirements.length);
+    const selected = await resolveRole("image.generator");
+    const profile: ProviderProfile = selected.model.provider === "ollama" ? genericOllamaImageProfile : { ...genericOllamaImageProfile, provider: selected.model.provider };
+    deterministicValidate(intent, profile);
+    const settings = await readSettings();
+    const record: ImageGenerationRecord = { id: requestId, status: "failed", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), intent, attempts: [] };
+    const maxAttempts = 1 + settings.imageGeneration.maxCorrectiveRetries;
+    let best: ImageAttempt | undefined;
+    let previousReview: ReviewResult | undefined;
+    for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber += 1) {
+      mark("prompt-compilation", attemptNumber === 1 ? "Preparing image instructions…" : `Correcting required details (${attemptNumber}/${maxAttempts})…`, "compiled-prompt");
+      const compiledPrompt = compile(intent, profile, previousReview ? correction(intent, previousReview) : undefined);
+      mark("provider-request", "Generating image…", "image-provider-request", Buffer.byteLength(compiledPrompt));
+      const dimensionsForAttempt = dimensions(intent.aspectRatio, profile);
+      const generated = await generateImageForRole("image.generator", { prompt: compiledPrompt, ...dimensionsForAttempt });
+      mark("provider-response", "Saving image…", "base64-image", generated.imageBase64.length);
+      const artifactPath = await writeArtifact(record.id, attemptNumber, generated.imageBase64);
+      mark("artifact-validation", "Checking requirements…", "image-artifact");
+      const item: ImageAttempt = { number: attemptNumber, provider: generated.provider, model: generated.modelId, compiledPrompt: settings.imageGeneration.preserveCompiledPrompts ? compiledPrompt : "[not retained]", artifactPath, status: "generated", createdAt: new Date().toISOString() };
+      record.attempts.push(item);
+      if (!settings.imageGeneration.autoReview) { item.status = "unverified"; best = item; break; }
+      mark("vision-review", "Checking requirements…", "vision-review-request");
+      try {
+        const reviewed = await review(intent, generated.imageBase64, settings.imageGeneration.reviewTimeoutSeconds * 1000);
+        item.review = reviewed; item.status = "reviewed";
+        if (!best || reviewed.score > (best.review?.score ?? -1)) best = item;
+        mark("retry-decision", "Checking requirements…", "review-result", reviewed.requirements.length);
+        if (reviewPasses(intent, reviewed, settings.imageGeneration.mandatoryConfidenceThreshold, settings.imageGeneration.retryPreferredRequirements)) break;
+        previousReview = reviewed;
+      } catch (error) {
+        if (settings.imageGeneration.visionUnavailableBehaviour === "fail") throw error;
+        item.status = "unverified"; best = item; break;
+      }
+      record.updatedAt = new Date().toISOString(); await persist(record);
     }
-    record.updatedAt = new Date().toISOString(); await persist(record);
+    if (!best) throw new Error("The bounded image pipeline could not produce a candidate.");
+    if (!settings.imageGeneration.saveAllAttempts) record.attempts = [best];
+    record.selectedAttempt = best.number;
+    record.status = best.status === "unverified" ? "unverified" : "complete";
+    record.updatedAt = new Date().toISOString();
+    await persist(record);
+    onStage?.(record.status === "unverified" ? "Image created; visual review was unavailable." : "Complete.");
+    return { record, image: await imageDataUrl(record), provider: profile.provider, diagnostics };
+  } catch (error) {
+    const failureStage = currentStage as ImageGenerationStage;
+    const runtimeError = error instanceof ModelRuntimeError ? error : undefined;
+    diagnostics.push({ requestId, stage: failureStage, success: false, payloadType: "none", expectedSchema: "kai-studio.image.v1", elapsedMs: Math.round(performance.now() - startedAt), errorClass: runtimeError?.category ?? (error instanceof Error ? error.name : "UnknownError"), message: error instanceof Error ? error.message.slice(0, 240) : "Unknown error", metadata: runtimeError?.details });
+    const sourceMessage = error instanceof Error ? error.message : "Kai Studio could not create that image.";
+    const userMessage = failureStage === "provider-request" || failureStage === "provider-response"
+      ? "The local image runtime could not complete the request."
+      : failureStage === "vision-review"
+        ? "Vision review could not complete, but any generated image was preserved."
+        : failureStage === "visual-intent"
+          ? "Image request could not be parsed before generation."
+          : sourceMessage;
+    throw new ImageGenerationError(userMessage, { requestId, stage: failureStage, provider: failureStage === "provider-request" || failureStage === "provider-response" ? "ollama" : undefined, errorClass: error instanceof Error ? error.name : "UnknownError", retryAvailable: false });
   }
-  if (!best) throw new Error("The bounded image pipeline could not produce a candidate.");
-  if (!settings.imageGeneration.saveAllAttempts) record.attempts = [best];
-  record.selectedAttempt = best.number;
-  record.status = best.status === "unverified" ? "unverified" : "complete";
-  record.updatedAt = new Date().toISOString();
-  await persist(record);
-  onStage?.(record.status === "unverified" ? "Image created; visual review was unavailable." : "Complete.");
-  return { record, image: await imageDataUrl(record), provider: profile.provider };
 }
 
 export async function getImageGeneration(id: string) { return (await readHistory()).find((record) => record.id === id) ?? null; }

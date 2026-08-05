@@ -72,6 +72,13 @@ export function StudioChat({
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState("");
+  const [imageErrorTechnical, setImageErrorTechnical] = useState<{
+    requestId?: string;
+    stage?: string;
+    provider?: string;
+    errorClass?: string;
+    retryAvailable?: boolean;
+  } | null>(null);
   const [runId, setRunId] = useState("");
   const [memoryStatus, setMemoryStatus] = useState<KaiMemoryStatus | null>(null);
   const [isTemporary, setIsTemporary] = useState(false);
@@ -193,6 +200,7 @@ export function StudioChat({
     setDraft("");
     setImages([]);
     setError("");
+    setImageErrorTechnical(null);
     setRunId("");
     shouldAutoFollowRef.current = true;
     sessionIdRef.current = crypto.randomUUID();
@@ -454,6 +462,13 @@ export function StudioChat({
         const body = (await response.json()) as {
           image?: string;
           error?: string;
+          technical?: {
+            requestId?: string;
+            stage?: string;
+            provider?: string;
+            errorClass?: string;
+            retryAvailable?: boolean;
+          };
           id?: string;
           status?: "complete" | "unverified";
           stages?: string[];
@@ -461,6 +476,7 @@ export function StudioChat({
           intent?: ChatMessage["imageGeneration"] extends infer Details ? Details extends { intent: infer Intent } ? Intent : never : never;
         };
         if (!response.ok || !body.image) {
+          setImageErrorTechnical(body.technical ?? null);
           throw new Error(body.error || "Kai Studio could not create that image.");
         }
 
@@ -993,9 +1009,21 @@ export function StudioChat({
           />
 
           {error && (
-            <p className="mx-2 mb-2 rounded-lg bg-red-400/10 px-3 py-2 text-xs text-red-300">
-              {error}
-            </p>
+            <div className="mx-2 mb-2 rounded-lg bg-red-400/10 px-3 py-2 text-xs text-red-300">
+              <p>{error}</p>
+              {imageErrorTechnical && (
+                <details className="mt-2 text-red-200/80">
+                  <summary className="cursor-pointer">Technical details</summary>
+                  <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+                    <dt>Request</dt><dd>{imageErrorTechnical.requestId ?? "Unavailable"}</dd>
+                    <dt>Stage</dt><dd>{imageErrorTechnical.stage ?? "Unavailable"}</dd>
+                    <dt>Runtime</dt><dd>{imageErrorTechnical.provider ?? "Unavailable"}</dd>
+                    <dt>Error class</dt><dd>{imageErrorTechnical.errorClass ?? "Unavailable"}</dd>
+                    <dt>Retry</dt><dd>{imageErrorTechnical.retryAvailable ? "Available" : "Not available"}</dd>
+                  </dl>
+                </details>
+              )}
+            </div>
           )}
 
           {(isRecording || isTranscribing) && (

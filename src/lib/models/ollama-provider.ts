@@ -19,6 +19,64 @@ function normaliseStatus(status: number) {
   return "provider" as const;
 }
 
+type OllamaImagePayload = {
+  data?: Array<{ b64_json?: unknown; url?: unknown }>;
+  image?: unknown;
+};
+
+export function buildOllamaImageRequest(model: ModelDefinition, request: ImageGenerationRequest) {
+  return {
+    model: model.providerModel,
+    prompt: request.prompt,
+    size: `${request.width}x${request.height}`,
+    response_format: "b64_json",
+    ...(request.seed === undefined ? {} : { seed: request.seed }),
+  };
+}
+
+/**
+ * Ollama's image models use the experimental OpenAI-compatible image endpoint,
+ * not the text-generation endpoint. Read its non-streaming envelope exactly
+ * once so an incomplete runtime response is reported accurately.
+ */
+export async function parseOllamaImageResponse(response: Response): Promise<string> {
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const body = await response.text();
+  const responseDetails = {
+    httpStatus: response.status,
+    contentType: contentType || "unknown",
+    responseBytes: Buffer.byteLength(body),
+    streamed: false,
+  };
+
+  if (!response.ok) {
+    throw new ModelRuntimeError(
+      `The local image runtime rejected the request (HTTP ${response.status}).`,
+      normaliseStatus(response.status),
+      "ollama",
+      responseDetails,
+    );
+  }
+  if (!body.trim()) {
+    throw new ModelRuntimeError("The local image runtime returned an empty response.", "provider", "ollama", responseDetails);
+  }
+  if (!contentType.includes("application/json")) {
+    throw new ModelRuntimeError("The local image runtime returned an unsupported response format.", "provider", "ollama", responseDetails);
+  }
+
+  let payload: OllamaImagePayload;
+  try {
+    payload = JSON.parse(body) as OllamaImagePayload;
+  } catch {
+    throw new ModelRuntimeError("The local image runtime returned an incomplete JSON response.", "provider", "ollama", { ...responseDetails, bodyComplete: false });
+  }
+  const image = payload.data?.[0]?.b64_json ?? payload.image;
+  if (typeof image !== "string" || !image.trim()) {
+    throw new ModelRuntimeError("The local image runtime returned no image data.", "provider", "ollama", responseDetails);
+  }
+  return image;
+}
+
 export const ollamaProvider: ModelProvider = {
   id: "ollama",
   async health(model, signal) {
@@ -57,15 +115,26 @@ export const ollamaProvider: ModelProvider = {
   },
   async generateImage(model: ModelDefinition, request: ImageGenerationRequest): Promise<ImageGenerationResult> {
     const started = performance.now();
+    const signal = request.signal ?? AbortSignal.timeout(180_000);
     let response: Response;
     try {
-      response = await fetch(`${endpoint}/api/generate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: model.providerModel, prompt: request.prompt, stream: false, options: { width: request.width, height: request.height, ...(request.seed === undefined ? {} : { seed: request.seed }) } }), signal: request.signal ?? AbortSignal.timeout(180_000) });
-    } catch (error) {
-      throw new ModelRuntimeError(error instanceof Error ? error.message : "The local image provider could not be reached.", request.signal?.aborted ? "cancelled" : "unavailable", "ollama");
+      response = await fetch(`${endpoint}/v1/images/generations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildOllamaImageRequest(model, request)),
+        signal,
+      });
+    } catch {
+      const aborted = signal.aborted;
+      const timedOut = aborted && signal.reason instanceof DOMException && signal.reason.name === "TimeoutError";
+      throw new ModelRuntimeError(
+        timedOut ? "The local image runtime took too long to respond." : aborted ? "The image request was cancelled." : "The local image runtime could not be reached.",
+        timedOut ? "timeout" : aborted ? "cancelled" : "unavailable",
+        "ollama",
+        { streamed: false, cancelState: aborted ? (timedOut ? "timeout" : "cancelled") : "not-cancelled" },
+      );
     }
-    if (!response.ok) throw new ModelRuntimeError((await response.text()).slice(0, 2000) || "The local image provider failed.", normaliseStatus(response.status), "ollama");
-    const payload = await response.json() as { image?: string };
-    if (!payload.image) throw new ModelRuntimeError("The local image provider returned no image.", "provider", "ollama");
-    return { imageBase64: payload.image, mimeType: "image/png", latencyMs: performance.now() - started, modelId: model.id, provider: "ollama" };
+    const imageBase64 = await parseOllamaImageResponse(response);
+    return { imageBase64, mimeType: "image/png", latencyMs: performance.now() - started, modelId: model.id, provider: "ollama" };
   },
 };
