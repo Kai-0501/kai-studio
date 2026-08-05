@@ -41,8 +41,10 @@ test("long constrained prompts use one complete JSON request envelope", () => {
   });
 });
 
+const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64");
+
 test("image adapter parses OpenAI-compatible base64 envelopes and rejects incomplete bodies safely", async () => {
-  const image = "aW1hZ2UtYnl0ZXM=";
+  const image = png;
   assert.equal(await parseOllamaImageResponse(new Response(JSON.stringify({ data: [{ b64_json: image }] }), { status: 200, headers: { "content-type": "application/json" } })), image);
   assert.equal(await parseOllamaImageResponse(new Response(JSON.stringify({ data: [{ url: `data:image/png;base64,${image}` }] }), { status: 200, headers: { "content-type": "application/json" } })), image);
   await assert.rejects(() => parseOllamaImageResponse(new Response(JSON.stringify({ data: [{ url: "https://example.test/image.png" }] }), { status: 200, headers: { "content-type": "application/json" } })), /returned an image URL/);
@@ -52,6 +54,48 @@ test("image adapter parses OpenAI-compatible base64 envelopes and rejects incomp
     async () => parseOllamaImageResponse(new Response(JSON.stringify({ error: "unsupported parameter: seed" }), { status: 400, headers: { "content-type": "application/json" } })),
     (error) => error?.details?.responseError === "unsupported parameter: seed",
   );
+});
+
+test("image adapter decodes Ollama NDJSON line by line and retains the final image", async () => {
+  const body = [
+    JSON.stringify({ object: "image.progress", model: "x/z-image-turbo", progress: 32 }),
+    "",
+    JSON.stringify({ object: "image.chunk", created: 123, data: [{ index: 0, object: "image.chunk", progress: 100, b64_json: png }] }),
+    JSON.stringify({ done: true }),
+    "",
+  ].join("\n");
+  const response = new Response(body, { status: 200, headers: { "content-type": "Application/X-NDJSON; charset=utf-8" } });
+  assert.equal(await parseOllamaImageResponse(response), png);
+  assert.equal(response.bodyUsed, true);
+});
+
+test("image adapter supports metadata and a trailing malformed NDJSON line after a verified image", async () => {
+  const body = `${JSON.stringify({ model: "x/z-image-turbo", created: 123 })}\n${JSON.stringify({ data: [{ b64_json: png }] })}\nnot-json`;
+  assert.equal(await parseOllamaImageResponse(new Response(body, { status: 200, headers: { "content-type": "application/ndjson" } })), png);
+});
+
+test("image adapter reports precise NDJSON terminal, malformed, and missing-image failures", async () => {
+  await assert.rejects(
+    () => parseOllamaImageResponse(new Response(`${JSON.stringify({ error: "model exhausted" })}\n`, { status: 200, headers: { "content-type": "application/x-ndjson" } })),
+    (error) => error?.category === "provider-declared" && error?.details?.terminalEventType === "terminal-error",
+  );
+  await assert.rejects(
+    () => parseOllamaImageResponse(new Response(`not-json\n${JSON.stringify({ data: [{ b64_json: png }] })}`, { status: 200, headers: { "content-type": "application/x-ndjson" } })),
+    (error) => error?.category === "response-decode" && error?.details?.malformedLineNumber === 1,
+  );
+  await assert.rejects(
+    () => parseOllamaImageResponse(new Response(`${JSON.stringify({ object: "image.progress", progress: 50 })}\n${JSON.stringify({ done: true })}`, { status: 200, headers: { "content-type": "application/x-ndjson" } })),
+    (error) => error?.category === "missing-image" && error?.details?.imageEventFound === false,
+  );
+});
+
+test("image adapter validates binary responses and handles a near-production sized NDJSON payload", async () => {
+  const binary = Buffer.from(png, "base64");
+  assert.equal(await parseOllamaImageResponse(new Response(binary, { status: 200, headers: { "content-type": "image/png" } })), png);
+  const large = Buffer.concat([binary, Buffer.alloc(660_000)]).toString("base64");
+  const body = `${JSON.stringify({ object: "image.progress", progress: 99 })}\n${JSON.stringify({ data: [{ b64_json: large }] })}\n`;
+  assert.ok(Buffer.byteLength(body) > 800_000);
+  assert.equal(await parseOllamaImageResponse(new Response(body, { status: 200, headers: { "content-type": "application/x-ndjson" } })), large);
 });
 
 test("Ollama image validation requires both model capability and the native image route", async () => {

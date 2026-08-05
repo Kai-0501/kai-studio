@@ -163,6 +163,16 @@ function imageRuntimeMessage(category: ModelRuntimeError["category"] | undefined
       return { message: "Kai Studio's image model configuration needs attention.", suggestedAction: "Open Settings, choose an installed image model, and save the assignment." };
     case "cancelled":
       return { message: "Image generation was cancelled.", suggestedAction: "You can try the request again when ready." };
+    case "provider-declared":
+      return { message: "The local image runtime declined the completed request.", suggestedAction: "Review the safe runtime details before retrying." };
+    case "response-decode":
+      return { message: "Kai Studio could not decode the local image result.", suggestedAction: "No corrective image retry was used. Review the safe runtime details before trying again." };
+    case "missing-image":
+      return { message: "The local image runtime completed without an image result.", suggestedAction: "No corrective image retry was used. Review the safe runtime details before trying again." };
+    case "artifact-validation":
+      return { message: "The local image runtime returned an invalid image artefact.", suggestedAction: "No corrective image retry was used. Review the safe runtime details before trying again." };
+    case "provider-transport":
+      return { message: "The local image runtime could not be reached.", suggestedAction: "Try again once. If it repeats, restart Ollama and review the image-runtime details." };
     default:
       return { message: "The local image runtime could not complete the request.", suggestedAction: "Try again once. If it repeats, restart Ollama and review the image-runtime details." };
   }

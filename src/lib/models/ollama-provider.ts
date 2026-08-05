@@ -81,7 +81,20 @@ export async function validateOllamaImageRuntime(model: ModelDefinition, signal?
 type OllamaImagePayload = {
   data?: Array<{ b64_json?: unknown; url?: unknown }>;
   image?: unknown;
+  error?: unknown;
+  message?: unknown;
+  done?: unknown;
+  object?: unknown;
 };
+
+type OllamaImageNdjsonEvent = OllamaImagePayload & {
+  created?: unknown;
+  model?: unknown;
+  usage?: unknown;
+};
+
+const MAX_IMAGE_RESPONSE_BYTES = 12 * 1024 * 1024;
+const MAX_IMAGE_NDJSON_LINE_BYTES = 11 * 1024 * 1024;
 
 type SafeImageRequestMetadata = Record<string, string | number | boolean | undefined>;
 
@@ -124,6 +137,138 @@ function imageDataUrlToBase64(value: string) {
   return encoded || null;
 }
 
+function imageSignature(buffer: Buffer) {
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  return null;
+}
+
+function validateImageBase64(base64: string, details: Record<string, string | number | boolean | undefined>) {
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(base64, "base64");
+  } catch {
+    throw new ModelRuntimeError("The local image runtime returned invalid base64 image data.", "artifact-validation", "ollama", details);
+  }
+  if (!buffer.length || !imageSignature(buffer)) {
+    throw new ModelRuntimeError("The local image runtime returned data that is not a supported image artefact.", "artifact-validation", "ollama", { ...details, imagePayloadBytes: buffer.length });
+  }
+  return base64;
+}
+
+function extractImageBase64(payload: OllamaImagePayload) {
+  const base64 = payload.data?.[0]?.b64_json ?? payload.image;
+  if (typeof base64 === "string" && base64.trim()) return base64.trim();
+  const url = payload.data?.[0]?.url;
+  if (typeof url === "string") {
+    const encoded = imageDataUrlToBase64(url);
+    if (encoded) return encoded;
+    if (url.trim()) return "external-url" as const;
+  }
+  return null;
+}
+
+function explicitProviderError(event: OllamaImageNdjsonEvent) {
+  const candidate = event.error ?? event.message;
+  return typeof candidate === "string" && candidate.trim() ? redactProviderErrorBody(candidate) : undefined;
+}
+
+function isNdjsonContentType(contentType: string) {
+  return contentType.includes("application/x-ndjson") || contentType.includes("application/ndjson") || contentType.includes("application/jsonl");
+}
+
+function classifyNdjsonEvent(event: OllamaImageNdjsonEvent) {
+  if (explicitProviderError(event)) return "terminal-error" as const;
+  if (extractImageBase64(event)) return "final-image" as const;
+  if (event.done === true) return "terminal-success" as const;
+  if (event.object === "image.chunk" || event.object === "image.progress" || event.object === "image.generation") return "progress" as const;
+  if (event.model !== undefined || event.created !== undefined || event.usage !== undefined) return "metadata" as const;
+  return "unknown" as const;
+}
+
+function supportedImageFromPayload(payload: OllamaImagePayload, details: Record<string, string | number | boolean | undefined>) {
+  const image = extractImageBase64(payload);
+  if (image === "external-url") {
+    throw new ModelRuntimeError("The local image runtime returned an image URL instead of the requested base64 payload.", "response-decode", "ollama", { ...details, responseShape: "url" });
+  }
+  if (!image) return null;
+  return validateImageBase64(image, details);
+}
+
+function responseDetails(response: Response, bodyBytes: number, contentType: string) {
+  return { httpStatus: response.status, contentType: contentType || "unknown", responseBytes: bodyBytes, streamed: isNdjsonContentType(contentType) };
+}
+
+function parseSingleJsonImageResponse(body: string, details: Record<string, string | number | boolean | undefined>) {
+  let payload: OllamaImagePayload;
+  try {
+    payload = JSON.parse(body) as OllamaImagePayload;
+  } catch {
+    throw new ModelRuntimeError("The local image runtime returned an incomplete JSON response.", "response-decode", "ollama", { ...details, bodyComplete: false, finalDecodeStage: "json-envelope" });
+  }
+  const declaredError = explicitProviderError(payload);
+  if (declaredError) throw new ModelRuntimeError("The local image runtime reported an error after accepting the request.", "provider-declared", "ollama", { ...details, responseError: declaredError, finalDecodeStage: "json-envelope" });
+  const image = supportedImageFromPayload(payload, { ...details, eventCount: 1, parsedEventCount: 1, terminalEventType: "final-image", finalDecodeStage: "json-envelope" });
+  if (!image) throw new ModelRuntimeError("The local image runtime returned no image data.", "missing-image", "ollama", { ...details, eventCount: 1, parsedEventCount: 1, finalDecodeStage: "json-envelope" });
+  return image;
+}
+
+function parseNdjsonImageResponse(body: string, details: Record<string, string | number | boolean | undefined>) {
+  const lines = body.split(/\r?\n/);
+  let parsedEventCount = 0;
+  let finalImage: string | null = null;
+  let finalImageLine = 0;
+  let terminalEventType = "none";
+  const eventTypes: Record<string, number> = {};
+  let ignoredTrailingMalformedLine: number | undefined;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line.trim()) continue;
+    const lineNumber = index + 1;
+    const lineBytes = Buffer.byteLength(line);
+    if (lineBytes > MAX_IMAGE_NDJSON_LINE_BYTES) {
+      throw new ModelRuntimeError("The local image runtime returned an image stream line that exceeds the safe decoder limit.", "response-decode", "ollama", { ...details, eventCount: parsedEventCount, parsedEventCount, malformedLineNumber: lineNumber, finalDecodeStage: "ndjson-line-size" });
+    }
+    let event: OllamaImageNdjsonEvent;
+    try {
+      event = JSON.parse(line) as OllamaImageNdjsonEvent;
+    } catch {
+      if (finalImage) {
+        ignoredTrailingMalformedLine = lineNumber;
+        break;
+      }
+      throw new ModelRuntimeError("The local image runtime returned malformed NDJSON before an image result was available.", "response-decode", "ollama", { ...details, eventCount: parsedEventCount, parsedEventCount, malformedLineNumber: lineNumber, finalDecodeStage: "ndjson-parse" });
+    }
+    parsedEventCount += 1;
+    const eventType = classifyNdjsonEvent(event);
+    eventTypes[eventType] = (eventTypes[eventType] ?? 0) + 1;
+    terminalEventType = eventType;
+    const declaredError = explicitProviderError(event);
+    if (declaredError) throw new ModelRuntimeError("The local image runtime reported an error after accepting the request.", "provider-declared", "ollama", { ...details, eventCount: parsedEventCount, parsedEventCount, terminalEventType: eventType, responseError: declaredError, finalDecodeStage: "ndjson-terminal-error" });
+    const extracted = supportedImageFromPayload(event, { ...details, eventCount: parsedEventCount, parsedEventCount, terminalEventType: eventType, finalDecodeStage: "ndjson-image" });
+    if (extracted) {
+      finalImage = extracted;
+      finalImageLine = lineNumber;
+    }
+  }
+
+  const diagnostics = {
+    ...details,
+    eventCount: parsedEventCount,
+    parsedEventCount,
+    eventTypeCounts: Object.entries(eventTypes).map(([type, count]) => `${type}:${count}`).join(",") || "none",
+    terminalEventType,
+    imageEventFound: Boolean(finalImage),
+    imageEventLine: finalImageLine || undefined,
+    malformedTrailingLineNumber: ignoredTrailingMalformedLine,
+    finalDecodeStage: finalImage ? "ndjson-final-image" : "ndjson-complete",
+  };
+  if (!finalImage) throw new ModelRuntimeError("The local image runtime completed its stream without an image result.", "missing-image", "ollama", diagnostics);
+  return finalImage;
+}
+
 export function buildOllamaImageRequest(model: ModelDefinition, request: ImageGenerationRequest) {
   return {
     model: model.providerModel,
@@ -136,58 +281,40 @@ export function buildOllamaImageRequest(model: ModelDefinition, request: ImageGe
 
 /**
  * Ollama's image models use the experimental OpenAI-compatible image endpoint,
- * not the text-generation endpoint. Read its non-streaming envelope exactly
- * once so an incomplete runtime response is reported accurately.
+ * not the text-generation endpoint. This route may reply with a single JSON
+ * envelope, NDJSON progress events, or a binary image. Each response body is
+ * consumed exactly once and NDJSON is parsed line-by-line.
  */
 export async function parseOllamaImageResponse(response: Response): Promise<string> {
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (contentType.startsWith("image/")) {
+    const binary = Buffer.from(await response.arrayBuffer());
+    const details = responseDetails(response, binary.length, contentType);
+    if (!response.ok) throw new ModelRuntimeError(`The local image runtime rejected the request (HTTP ${response.status}).`, normaliseStatus(response.status), "ollama", details);
+    if (binary.length > MAX_IMAGE_RESPONSE_BYTES) throw new ModelRuntimeError("The local image runtime returned an image artefact that exceeds the safe decoder limit.", "artifact-validation", "ollama", details);
+    if (!imageSignature(binary)) throw new ModelRuntimeError("The local image runtime returned an unsupported binary image artefact.", "artifact-validation", "ollama", details);
+    return binary.toString("base64");
+  }
+
   const body = await response.text();
-  const responseDetails = {
-    httpStatus: response.status,
-    contentType: contentType || "unknown",
-    responseBytes: Buffer.byteLength(body),
-    streamed: false,
-  };
+  const bodyBytes = Buffer.byteLength(body);
+  const details = responseDetails(response, bodyBytes, contentType);
 
   if (!response.ok) {
     throw new ModelRuntimeError(
       `The local image runtime rejected the request (HTTP ${response.status}).`,
       normaliseStatus(response.status),
       "ollama",
-      { ...responseDetails, responseError: redactProviderErrorBody(body) },
+      { ...details, responseError: redactProviderErrorBody(body) },
     );
   }
+  if (bodyBytes > MAX_IMAGE_RESPONSE_BYTES) throw new ModelRuntimeError("The local image runtime returned a response that exceeds the safe decoder limit.", "response-decode", "ollama", details);
   if (!body.trim()) {
-    throw new ModelRuntimeError("The local image runtime returned an empty response.", "provider", "ollama", responseDetails);
+    throw new ModelRuntimeError("The local image runtime returned an empty response.", "missing-image", "ollama", details);
   }
-  if (!contentType.includes("application/json")) {
-    throw new ModelRuntimeError("The local image runtime returned an unsupported response format.", "provider", "ollama", responseDetails);
-  }
-
-  let payload: OllamaImagePayload;
-  try {
-    payload = JSON.parse(body) as OllamaImagePayload;
-  } catch {
-    throw new ModelRuntimeError("The local image runtime returned an incomplete JSON response.", "provider", "ollama", { ...responseDetails, bodyComplete: false });
-  }
-  const base64 = payload.data?.[0]?.b64_json ?? payload.image;
-  if (typeof base64 === "string" && base64.trim()) return base64;
-
-  const url = payload.data?.[0]?.url;
-  if (typeof url === "string") {
-    const encoded = imageDataUrlToBase64(url);
-    if (encoded) return encoded;
-    throw new ModelRuntimeError(
-      "The local image runtime returned an image URL instead of the requested base64 payload.",
-      "provider",
-      "ollama",
-      { ...responseDetails, responseShape: "url" },
-    );
-  }
-  if (typeof base64 !== "string" || !base64.trim()) {
-    throw new ModelRuntimeError("The local image runtime returned no image data.", "provider", "ollama", responseDetails);
-  }
-  return base64;
+  if (isNdjsonContentType(contentType)) return parseNdjsonImageResponse(body, details);
+  if (contentType.includes("application/json")) return parseSingleJsonImageResponse(body, details);
+  throw new ModelRuntimeError("The local image runtime returned an unsupported response format.", "response-decode", "ollama", details);
 }
 
 export const ollamaProvider: ModelProvider = {
@@ -247,7 +374,7 @@ export const ollamaProvider: ModelProvider = {
       const timedOut = aborted && signal.reason instanceof DOMException && signal.reason.name === "TimeoutError";
       throw new ModelRuntimeError(
         timedOut ? "The local image runtime took too long to respond." : aborted ? "The image request was cancelled." : "The local image runtime could not be reached.",
-        timedOut ? "timeout" : aborted ? "cancelled" : "unavailable",
+        timedOut ? "timeout" : aborted ? "cancelled" : "provider-transport",
         "ollama",
         { ...requestDetails, streamed: false, providerTimeoutMs: OLLAMA_IMAGE_REQUEST_TIMEOUT_MS, cancelState: aborted ? (timedOut ? "timeout" : "cancelled") : "not-cancelled" },
       );
