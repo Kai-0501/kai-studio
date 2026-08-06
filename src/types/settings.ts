@@ -74,6 +74,7 @@ export type LocalModel = {
   name: string;
   size: number;
   modifiedAt: string;
+  capabilities?: string[];
   provider?: "ollama" | "huggingface" | "mlx" | "llamacpp" | "manual";
   displayName?: string;
   source?: "ollama" | "kai-managed-huggingface" | "huggingface-cache" | "user-managed-local" | "manual-registration" | "managed-mlx" | "managed-llamacpp";

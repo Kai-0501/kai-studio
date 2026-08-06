@@ -15,6 +15,16 @@ type OllamaTagsResponse = {
   }>;
 };
 
+export function mapOllamaTagModels(body: OllamaTagsResponse) {
+  return (body.models ?? []).map((model) => ({
+    name: model.name,
+    size: model.size,
+    modifiedAt: model.modified_at,
+    capabilities: Array.isArray(model.capabilities) ? [...model.capabilities] : undefined,
+    provider: "ollama" as const,
+  }));
+}
+
 export async function GET() {
   const checkedAt = new Date().toISOString();
   const settings = await readSettings();
@@ -51,12 +61,10 @@ export async function GET() {
     if (!response.ok) throw new Error(`Ollama returned ${response.status}.`);
 
     const body = (await response.json()) as OllamaTagsResponse;
-    const models = (body.models ?? []).map((model) => ({
-        name: model.name,
-        size: model.size,
-        modifiedAt: model.modified_at,
-        provider: "ollama" as const,
-      }));
+    // This is intentionally fresh on every scan. Runtime capability validation
+    // uses `/api/show` again at execution time, so a changed Ollama model can
+    // never be accepted from stale startup metadata.
+    const models = mapOllamaTagModels(body);
 
     const status: SystemStatus = {
       ollamaOnline: true,

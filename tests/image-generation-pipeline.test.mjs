@@ -98,23 +98,38 @@ test("image adapter validates binary responses and handles a near-production siz
   assert.equal(await parseOllamaImageResponse(new Response(body, { status: 200, headers: { "content-type": "application/x-ndjson" } })), large);
 });
 
-test("Ollama image validation requires both model capability and the native image route", async () => {
+test("Ollama image validation accepts an image model without probing an unsupported OPTIONS route", async () => {
   const model = { providerModel: "x/z-image-turbo:latest" };
   const requests = [];
   await validateOllamaImageRuntime(model, undefined, async (url, init) => {
     requests.push({ url: String(url), method: init?.method });
-    if (init?.method === "POST") return new Response(JSON.stringify({ capabilities: ["image"] }), { status: 200, headers: { "content-type": "application/json" } });
-    return new Response(null, { status: 405, headers: { Allow: "POST" } });
+    return new Response(JSON.stringify({ capabilities: ["image"] }), { status: 200, headers: { "content-type": "application/json" } });
   });
-  assert.deepEqual(requests.map((entry) => entry.method), ["POST", "OPTIONS"]);
+  assert.deepEqual(requests.map((entry) => entry.method), ["POST"]);
+  assert.match(requests[0].url, /\/api\/show$/);
+});
+
+test("Ollama image validation preserves aliases and never caches stale capability metadata", async () => {
+  const seenModels = [];
+  for (const providerModel of ["x/z-image-turbo", "x/z-image-turbo:latest"]) {
+    await validateOllamaImageRuntime({ providerModel }, undefined, async (_url, init) => {
+      seenModels.push(JSON.parse(init.body).model);
+      return new Response(JSON.stringify({ capabilities: ["image"] }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+  }
+  assert.deepEqual(seenModels, ["x/z-image-turbo", "x/z-image-turbo:latest"]);
+
+  let validationCount = 0;
+  await validateOllamaImageRuntime({ providerModel: "x/z-image-turbo:latest" }, undefined, async () => {
+    validationCount += 1;
+    return new Response(JSON.stringify({ capabilities: validationCount === 1 ? ["image"] : ["completion"] }), { status: 200, headers: { "content-type": "application/json" } });
+  });
   await assert.rejects(
-    () => validateOllamaImageRuntime(model, undefined, async () => new Response(JSON.stringify({ capabilities: ["completion"] }), { status: 200, headers: { "content-type": "application/json" } })),
+    () => validateOllamaImageRuntime({ providerModel: "x/z-image-turbo:latest" }, undefined, async () => {
+      validationCount += 1;
+      return new Response(JSON.stringify({ capabilities: ["completion"] }), { status: 200, headers: { "content-type": "application/json" } });
+    }),
     /does not expose image-generation capability/,
   );
-  await assert.rejects(
-    () => validateOllamaImageRuntime(model, undefined, async (_url, init) => init?.method === "POST"
-      ? new Response(JSON.stringify({ capabilities: ["image"] }), { status: 200, headers: { "content-type": "application/json" } })
-      : new Response(null, { status: 404 })),
-    /does not expose image generation/,
-  );
+  assert.equal(validationCount, 2);
 });

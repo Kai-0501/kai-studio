@@ -28,9 +28,10 @@ async function readJson(response: Response) {
 }
 
 /**
- * Validates Ollama's documented image contract without generating an image.
- * `/api/show` confirms the installed model exposes the image capability;
- * OPTIONS confirms the native OpenAI-compatible image route is present.
+ * Validates that the selected Ollama model is an installed image model without
+ * generating an image. `/api/show` is the capability authority here: Ollama's
+ * native image endpoint does not implement an OPTIONS contract, so probing it
+ * can return 404 even when a real POST generation request is supported.
  */
 export async function validateOllamaImageRuntime(model: ModelDefinition, signal?: AbortSignal, request: typeof fetch = fetch): Promise<void> {
   let modelResponse: Response;
@@ -58,23 +59,6 @@ export async function validateOllamaImageRuntime(model: ModelDefinition, signal?
   const capabilities = Array.isArray(modelMetadata.capabilities) ? modelMetadata.capabilities : [];
   if (!capabilities.includes("image")) {
     throw new ModelRuntimeError("The configured Ollama model does not expose image-generation capability.", "capability", "ollama", { operation: "model-capabilities" });
-  }
-
-  let routeResponse: Response;
-  try {
-    routeResponse = await request(`${endpoint}/v1/images/generations`, { method: "OPTIONS", signal: signal ?? AbortSignal.timeout(4_000) });
-  } catch {
-    throw new ModelRuntimeError("Ollama's image-generation endpoint is not reachable.", "unavailable", "ollama", { operation: "image-route-validation" });
-  }
-  // Ollama returns 405 with Allow: POST on versions that expose the route.
-  if (![200, 204, 405].includes(routeResponse.status)) {
-    const category = routeResponse.status === 404 ? "capability" : normaliseStatus(routeResponse.status);
-    throw new ModelRuntimeError(
-      routeResponse.status === 404 ? "This Ollama runtime does not expose image generation." : "Ollama's image-generation endpoint could not be validated.",
-      category,
-      "ollama",
-      { operation: "image-route-validation", httpStatus: routeResponse.status },
-    );
   }
 }
 
