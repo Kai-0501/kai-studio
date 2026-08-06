@@ -47,7 +47,7 @@ test("native Ollama image fallback uses the documented generate envelope", () =>
   assert.deepEqual(request, {
     model: "x/z-image-turbo",
     prompt,
-    stream: false,
+    stream: true,
     width: 1024,
     height: 576,
   });
@@ -80,7 +80,7 @@ test("image generation falls back exactly once to Ollama native generate after t
     assert.deepEqual(calls[1].body, {
       model: "x/z-image-turbo",
       prompt: "A sunken Japandi bedroom",
-      stream: false,
+      stream: true,
       width: 1024,
       height: 576,
     });

@@ -275,7 +275,10 @@ export function buildOllamaNativeImageRequest(model: ModelDefinition, request: I
   return {
     model: model.providerModel,
     prompt: request.prompt,
-    stream: false,
+    // Ollama's experimental image runner reports progress and returns the final
+    // base64 image as NDJSON. Keep this enabled: some releases reject image
+    // generation outright when a non-streaming request is forced.
+    stream: true,
     width: request.width,
     height: request.height,
   };
