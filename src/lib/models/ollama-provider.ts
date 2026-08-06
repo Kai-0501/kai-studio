@@ -101,13 +101,15 @@ function redactProviderErrorBody(body: string) {
 export function describeOllamaImageRequest(body: Record<string, unknown>): SafeImageRequestMetadata {
   const prompt = typeof body.prompt === "string" ? body.prompt : "";
   const negativePrompt = typeof body.negative_prompt === "string" ? body.negative_prompt : "";
-  const optionalFields = Object.keys(body).filter((field) => !["model", "prompt", "n", "size", "response_format"].includes(field));
+  const optionalFields = Object.keys(body).filter((field) => !["model", "prompt", "n", "size", "response_format", "stream", "width", "height"].includes(field));
+  const nativeWidth = typeof body.width === "number" ? body.width : undefined;
+  const nativeHeight = typeof body.height === "number" ? body.height : undefined;
   return {
     requestBodyBytes: Buffer.byteLength(JSON.stringify(body)),
     requestFields: Object.keys(body).sort().join(","),
     promptLength: prompt.length,
     negativePromptLength: negativePrompt.length,
-    dimensions: typeof body.size === "string" ? body.size : undefined,
+    dimensions: typeof body.size === "string" ? body.size : nativeWidth && nativeHeight ? `${nativeWidth}x${nativeHeight}` : undefined,
     providerModel: typeof body.model === "string" ? body.model : undefined,
     optionalParameters: optionalFields.join(",") || "none",
   };
@@ -264,6 +266,22 @@ export function buildOllamaImageRequest(model: ModelDefinition, request: ImageGe
 }
 
 /**
+ * Some Ollama builds expose image generation only through their native
+ * `/api/generate` route. Keep this separate from the OpenAI-compatible
+ * envelope above: it is used solely after that route has conclusively returned
+ * 404, never as an optimistic retry.
+ */
+export function buildOllamaNativeImageRequest(model: ModelDefinition, request: ImageGenerationRequest) {
+  return {
+    model: model.providerModel,
+    prompt: request.prompt,
+    stream: false,
+    width: request.width,
+    height: request.height,
+  };
+}
+
+/**
  * Ollama's image models use the experimental OpenAI-compatible image endpoint,
  * not the text-generation endpoint. This route may reply with a single JSON
  * envelope, NDJSON progress events, or a binary image. Each response body is
@@ -345,7 +363,7 @@ export const ollamaProvider: ModelProvider = {
     const signal = request.signal ?? AbortSignal.timeout(OLLAMA_IMAGE_REQUEST_TIMEOUT_MS);
     let response: Response;
     const body = buildOllamaImageRequest(model, request);
-    const requestDetails = describeOllamaImageRequest(body);
+    let requestDetails: SafeImageRequestMetadata = { ...describeOllamaImageRequest(body), imageTransport: "openai-compatible" };
     try {
       response = await fetch(`${endpoint}/v1/images/generations`, {
         method: "POST",
@@ -362,6 +380,36 @@ export const ollamaProvider: ModelProvider = {
         "ollama",
         { ...requestDetails, streamed: false, providerTimeoutMs: OLLAMA_IMAGE_REQUEST_TIMEOUT_MS, cancelState: aborted ? (timedOut ? "timeout" : "cancelled") : "not-cancelled" },
       );
+    }
+    // Some Ollama installations report the model as image-capable but do not
+    // mount their experimental OpenAI image endpoint. Their native image
+    // runner accepts /api/generate and returns the same base64 `image` field.
+    // A 404 is route evidence, not a prompt/model failure, so fall back once
+    // without changing the provider-neutral request schema or retry policy.
+    if (response.status === 404) {
+      const nativeBody = buildOllamaNativeImageRequest(model, request);
+      requestDetails = {
+        ...describeOllamaImageRequest(nativeBody),
+        imageTransport: "native-generate-fallback",
+        providerEndpointFallback: "/api/generate",
+      };
+      try {
+        response = await fetch(`${endpoint}/api/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(nativeBody),
+          signal,
+        });
+      } catch {
+        const aborted = signal.aborted;
+        const timedOut = aborted && signal.reason instanceof DOMException && signal.reason.name === "TimeoutError";
+        throw new ModelRuntimeError(
+          timedOut ? "The local image runtime took too long to respond." : aborted ? "The image request was cancelled." : "The local image runtime could not be reached.",
+          timedOut ? "timeout" : aborted ? "cancelled" : "provider-transport",
+          "ollama",
+          { ...requestDetails, streamed: false, providerTimeoutMs: OLLAMA_IMAGE_REQUEST_TIMEOUT_MS, cancelState: aborted ? (timedOut ? "timeout" : "cancelled") : "not-cancelled" },
+        );
+      }
     }
     let imageBase64: string;
     try {
