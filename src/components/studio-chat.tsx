@@ -1076,9 +1076,9 @@ export function StudioChat({
             </div>
           )}
 
-          <div className="flex items-center justify-between gap-3 px-1 pb-1">
-            <div className="flex items-center gap-1">
-              <div className="mr-1 flex rounded-full bg-black/20 p-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+              <div className="mr-1 flex shrink-0 rounded-full bg-black/20 p-1">
                 <button
                   type="button"
                   onClick={() => setComposerMode("chat")}
@@ -1125,7 +1125,7 @@ export function StudioChat({
                   isRecording ||
                   isTranscribing
                 }
-                className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-slate-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xl text-slate-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
                 aria-label="Attach photos"
               >
                 ＋
@@ -1137,7 +1137,7 @@ export function StudioChat({
                     isRecording ? void finishRecording() : void startRecording()
                   }
                   disabled={isRunning || isTranscribing}
-                  className={`flex h-9 min-w-9 items-center justify-center rounded-full px-2 text-sm transition disabled:opacity-40 ${
+                  className={`flex h-9 min-w-9 shrink-0 items-center justify-center rounded-full px-2 text-sm transition disabled:opacity-40 ${
                     isRecording
                       ? "border border-sky-300/35 bg-sky-400/20 text-sky-100"
                       : "text-slate-400 hover:bg-sky-400/10 hover:text-sky-200"
@@ -1156,14 +1156,15 @@ export function StudioChat({
               )}
 
               {composerMode === "chat" ? (
-              <div className="flex items-center gap-1">
-              <label className="relative">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+              <label className="relative min-w-0 max-w-full flex-1 sm:flex-none sm:max-w-[min(18rem,40vw)]">
                 <span className="sr-only">Gemma model</span>
                 <select
                   value={model}
                   onChange={(event) => setModel(event.target.value)}
                   disabled={Boolean(repositoryHandoff) || isRunning || isRecording || isTranscribing}
-                  className="appearance-none rounded-full border border-sky-400/25 bg-sky-400/10 py-2 pl-3 pr-7 text-xs font-medium text-sky-200 outline-none transition hover:bg-sky-400/15 disabled:opacity-50"
+                  title={`${selectedModel.label} · ${selectedModel.detail}`}
+                  className="block min-w-0 max-w-full truncate appearance-none rounded-full border border-sky-400/25 bg-sky-400/10 py-2 pl-3 pr-7 text-xs font-medium text-sky-200 outline-none transition hover:bg-sky-400/15 disabled:opacity-50"
                 >
                   {(repositoryHandoff ? modelOptions.filter((option) => option.value === model) : modelOptions).map((option) => (
                     <option
@@ -1180,17 +1181,17 @@ export function StudioChat({
                 </span>
               </label>
               {!repositoryHandoff ? <>
-                <label className="relative">
+                <label className="relative max-w-full">
                   <span className="sr-only">Conversation mode</span>
-                  <select value={conversationMode} onChange={(event) => setConversationMode(event.target.value as Exclude<ConversationMode, "temporary">)} disabled={isTemporary || isRunning} className="appearance-none rounded-full border border-sky-400/15 bg-sky-400/[0.06] py-2 pl-3 pr-6 text-xs text-sky-200/80 outline-none disabled:opacity-40">
+                  <select value={conversationMode} onChange={(event) => setConversationMode(event.target.value as Exclude<ConversationMode, "temporary">)} disabled={isTemporary || isRunning} className="block max-w-full truncate appearance-none rounded-full border border-sky-400/15 bg-sky-400/[0.06] py-2 pl-3 pr-6 text-xs text-sky-200/80 outline-none disabled:opacity-40">
                     <option value="normal" className="bg-[#181c24]">Normal</option>
                     <option value="writing" className="bg-[#181c24]">Writing</option>
                     <option value="clean-room" className="bg-[#181c24]">Clean room</option>
                   </select>
                 </label>
-                <label className="relative">
+                <label className="relative max-w-full">
                   <span className="sr-only">Memory sources</span>
-                  <select value={contextOverride} onChange={(event) => setContextOverride(event.target.value as ContextOverride)} disabled={isTemporary || isRunning || conversationMode === "clean-room"} className="appearance-none rounded-full border border-sky-400/15 bg-sky-400/[0.06] py-2 pl-3 pr-6 text-xs text-sky-200/80 outline-none disabled:opacity-40">
+                  <select value={contextOverride} onChange={(event) => setContextOverride(event.target.value as ContextOverride)} disabled={isTemporary || isRunning || conversationMode === "clean-room"} className="block max-w-full truncate appearance-none rounded-full border border-sky-400/15 bg-sky-400/[0.06] py-2 pl-3 pr-6 text-xs text-sky-200/80 outline-none disabled:opacity-40">
                     <option value="automatic" className="bg-[#181c24]">Memory · Auto</option>
                     <option value="conversation-only" className="bg-[#181c24]">Conversation only</option>
                     <option value="kailore-only" className="bg-[#181c24]">KaiLore only</option>
@@ -1201,7 +1202,7 @@ export function StudioChat({
               </> : null}
               </div>
               ) : (
-                <span className="rounded-full px-3 py-2 text-xs font-medium text-sky-300">
+                <span className="shrink-0 rounded-full px-3 py-2 text-xs font-medium text-sky-300">
                   Image generation
                 </span>
               )}
@@ -1215,7 +1216,7 @@ export function StudioChat({
                 isRecording ||
                 isTranscribing
               }
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-sky-300/35 bg-sky-400/20 text-sm font-semibold text-sky-100 shadow-[inset_0_1px_0_rgba(186,230,253,0.18)] transition hover:bg-sky-400/30 disabled:border-white/5 disabled:bg-white/5 disabled:text-slate-700"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-sky-300/35 bg-sky-400/20 text-sm font-semibold text-sky-100 shadow-[inset_0_1px_0_rgba(186,230,253,0.18)] transition hover:bg-sky-400/30 disabled:border-white/5 disabled:bg-white/5 disabled:text-slate-700"
               aria-label="Send message"
             >
               {isRunning ? "·" : "↑"}
