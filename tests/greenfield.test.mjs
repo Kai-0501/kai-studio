@@ -9,6 +9,7 @@ import { greenfieldTemplates, getGreenfieldTemplate } from "../src/lib/greenfiel
 
 const greenfieldRoot = await mkdtemp(path.join(os.tmpdir(), "kai-greenfield-smoke-"));
 process.env.KAI_GREENFIELD_ROOT = greenfieldRoot;
+process.env.KAI_GREENFIELD_SKIP_INSTALL = "1";
 const { approveGreenfieldRoot, scaffoldGreenfield } = await import(`../src/lib/greenfield-workspace.ts?smoke=${crypto.randomUUID()}`);
 const run = promisify(execFile);
 
@@ -18,16 +19,26 @@ test("greenfield registry exposes the bounded starter templates", () => {
   assert.equal(getGreenfieldTemplate("unknown"), null);
 });
 
-test("greenfield smoke creates, verifies, and commits a disposable local application", async () => {
-  const { projectRoot } = await scaffoldGreenfield(greenfieldRoot, "node-service", "smoke-app");
-  await run("npm", ["test"], { cwd: projectRoot });
-  await run("npm", ["run", "lint"], { cwd: projectRoot });
-  await run("npm", ["run", "build"], { cwd: projectRoot });
+for (const templateId of ["nextjs", "electron-next", "node-service"]) test(`greenfield ${templateId} creates its declared local application structure`, async () => {
+  const { projectRoot, template, installed } = await scaffoldGreenfield(greenfieldRoot, templateId, `smoke-${templateId}`);
+  assert.equal(installed, false);
+  for (const directory of template.expectedDirectories) {
+    const info = await import("node:fs/promises").then(({ stat }) => stat(path.join(projectRoot, directory)));
+    assert.equal(info.isDirectory(), true);
+  }
+  const manifest = JSON.parse(await readFile(path.join(projectRoot, "package.json"), "utf8"));
+  assert.equal(typeof manifest.scripts.test, "string");
+  assert.equal(typeof manifest.scripts.build, "string");
+  if (templateId === "node-service") {
+    await run("npm", ["test"], { cwd: projectRoot });
+    await run("npm", ["run", "lint"], { cwd: projectRoot });
+    await run("npm", ["run", "build"], { cwd: projectRoot });
+  }
   await run("/usr/bin/git", ["add", "--all"], { cwd: projectRoot });
   await run("/usr/bin/git", ["-c", "user.name=Kai Studio Smoke", "-c", "user.email=kai-studio-smoke@local", "commit", "-m", "Create verified greenfield smoke app"], { cwd: projectRoot });
   const status = await run("/usr/bin/git", ["status", "--porcelain"], { cwd: projectRoot });
   assert.equal(status.stdout.trim(), "");
-  assert.match(await readFile(path.join(projectRoot, "README.md"), "utf8"), /Node\.js utility or service/);
+  assert.match(await readFile(path.join(projectRoot, "README.md"), "utf8"), new RegExp(template.displayName.replace(/[+]/g, "\\+")));
 });
 
 test("greenfield canonical paths allow macOS aliases but reject a symlink escape", async () => {

@@ -64,3 +64,31 @@ Provider errors are normalized into configuration, capability, availability,
 authentication, rate-limit, timeout, cancellation, or provider failures.
 Inference telemetry records the selected role, provider, latency, usage, tool
 calls, fallbacks, and outcome without storing API keys.
+
+## Generative residency lifecycle
+
+All local generation passes through the provider-neutral
+`GenerativeRuntimeManager`. A lease is keyed by the resolved provider model,
+not by a UI component. The manager records lifecycle state, ownership,
+reference count, active roles, workflows, jobs and sessions, estimated resident
+bytes, last use, unload deadline, and health errors.
+
+Overlapping leases for one model share one load. Nested calls from the coding
+workflow therefore reuse the coding job's outer lease. Different model IDs
+remain independent residencies. Only a zero-reference `kai-managed` runtime
+with an explicit unload adapter may be released; a model already resident
+before Kai Studio acquired it is treated as user-managed external state and is
+never forcibly unloaded. Ollama operations are exact-tag scoped and do not stop
+the server or unload unrelated models.
+
+The coding workflow keeps one configured coding model resident while planner,
+implementer, and reviewer take sequential turns. Their application checkpoints
+are private and reconstructable, so model weights can remain shared without
+sharing agent KV/session state. Stop-for-review releases the model lease while
+preserving job checkpoints and repository state.
+
+Runtime state is exposed through the coding runtime status endpoint and the
+Settings observability panel. Model assignment, actual resolved model,
+ownership, references, resident state, memory-pressure fallback, and pending
+idle eviction remain visible. Kai Studio never performs a hidden provider or
+model substitution.

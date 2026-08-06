@@ -18,6 +18,40 @@ const navigation = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [activeBuildHref, setActiveBuildHref] = useState("");
+  const isChatRoute = pathname === "/chat" || pathname.startsWith("/chat/");
+  const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (!isChatRoute) return;
+
+    const restoreTimer = window.setTimeout(() => {
+      try {
+        setChatSidebarCollapsed(window.localStorage.getItem("kai-chat-sidebar-collapsed") === "true");
+      } catch {
+        // A restricted storage context should not prevent Chat from opening.
+      }
+    }, 0);
+
+    const toggle = () => setChatSidebarCollapsed((current) => {
+      const next = !current;
+      try { window.localStorage.setItem("kai-chat-sidebar-collapsed", String(next)); } catch { /* best effort */ }
+      return next;
+    });
+    const onToggle = () => toggle();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "\\" && (event.metaKey || event.ctrlKey) && !event.altKey) {
+        event.preventDefault();
+        toggle();
+      }
+    };
+    window.addEventListener("kai:toggle-chat-sidebar", onToggle);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(restoreTimer);
+      window.removeEventListener("kai:toggle-chat-sidebar", onToggle);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isChatRoute]);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,7 +66,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <main className="flex min-h-screen bg-[#080b12] text-white">
-      <aside className="hidden w-64 shrink-0 border-r border-white/10 bg-[#0b0f18] p-5 md:flex md:flex-col">
+      <aside
+        aria-hidden={isChatRoute && chatSidebarCollapsed}
+        inert={isChatRoute && chatSidebarCollapsed ? true : undefined}
+        className={`hidden w-64 shrink-0 border-r border-white/10 bg-[#0b0f18] p-5 transition-[width,opacity,transform] duration-[var(--kai-sidebar-transition)] md:flex md:flex-col ${isChatRoute && chatSidebarCollapsed ? "pointer-events-none -translate-x-3 overflow-hidden opacity-0 md:w-0 md:border-r-0 md:p-0" : ""}`}
+      >
         <Link href="/" className="flex items-center gap-3 px-2 py-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500 font-bold">
             K
@@ -80,7 +118,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      {children}
+      <div className={`relative flex min-w-0 flex-1 ${isChatRoute && chatSidebarCollapsed ? "kai-chat-shell-collapsed" : ""}`}>
+        {children}
+        {isChatRoute && chatSidebarCollapsed ? (
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("kai:toggle-chat-sidebar"))}
+            className="fixed left-4 top-14 z-30 flex h-9 w-9 items-center justify-center rounded-xl border border-sky-300/25 bg-[#101a29]/90 text-sky-200 shadow-lg shadow-black/30 backdrop-blur-md transition hover:border-sky-200/50 hover:bg-sky-400/15 focus:outline-none focus:ring-2 focus:ring-sky-300/70"
+            aria-label="Show Chat sidebar"
+            title="Show Chat sidebar (⌘\\)"
+          >
+            ☰
+          </button>
+        ) : null}
+      </div>
     </main>
   );
 }

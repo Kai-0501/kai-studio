@@ -1,4 +1,4 @@
-import { longTermMemoryRetriever } from "@/lib/memory/runtime";
+import { kaiLoreMemoryRetriever } from "@/lib/memory/runtime";
 import { memoryContextSystemMessage } from "@/lib/memory/prompt";
 import { readSettings } from "@/lib/settings-store";
 import type { CanonicalMessage } from "@/lib/models/types";
@@ -7,7 +7,7 @@ export async function agentMemoryContext(query: string): Promise<CanonicalMessag
   try {
     const settings = await readSettings();
     if (!settings.longTermMemoryEnabled) return [];
-    const report = await longTermMemoryRetriever.retrieve(query.slice(0, 4_000));
+    const report = await (await kaiLoreMemoryRetriever()).retrieve(query.slice(0, 4_000));
     if (!report.retrieved.length) return [];
     return [{ role: "system", content: memoryContextSystemMessage(report.retrieved) }];
   } catch {

@@ -5,6 +5,18 @@ on:
     # 22:00 UTC is 06:00 Asia/Singapore the following morning.
     - cron: "0 22 * * *"
   workflow_dispatch:
+    inputs:
+      idea_count:
+        description: "Exactly one private review repository, or the normal three"
+        required: false
+        default: "3"
+        type: choice
+        options: ["1", "3"]
+      repository_suffix:
+        description: "Safe suffix for manually-created review repositories"
+        required: false
+        default: "greenfield"
+        type: string
 
 concurrency:
   group: daily-private-idea-repositories
@@ -34,6 +46,7 @@ jobs:
           AI_MODEL: ${{ vars.GEMINI_IDEA_MODEL || 'gemini-3.6-flash' }}
           OWNED_REPOSITORIES_FILE: /tmp/owned-repositories.json
           IDEAS_OUTPUT_FILE: /tmp/daily-ideas.json
+          IDEA_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.idea_count || '3' }}
         run: node scripts/generate-daily-private-ideas.mjs
 
       - name: Generate with OpenAI
@@ -45,6 +58,7 @@ jobs:
           AI_BASE_URL: ${{ vars.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
           OWNED_REPOSITORIES_FILE: /tmp/owned-repositories.json
           IDEAS_OUTPUT_FILE: /tmp/daily-ideas.json
+          IDEA_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.idea_count || '3' }}
         run: node scripts/generate-daily-private-ideas.mjs
 
       - name: Generate with Kimi
@@ -56,6 +70,7 @@ jobs:
           AI_BASE_URL: ${{ vars.KIMI_BASE_URL }}
           OWNED_REPOSITORIES_FILE: /tmp/owned-repositories.json
           IDEAS_OUTPUT_FILE: /tmp/daily-ideas.json
+          IDEA_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.idea_count || '3' }}
         run: node scripts/generate-daily-private-ideas.mjs
 
       - name: Preserve the validated architecture portfolio
@@ -66,9 +81,11 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Create exactly three private greenfield repositories
+      - name: Create the validated private greenfield repositories
         env:
           GH_TOKEN: ${{ secrets.REPO_CREATOR_TOKEN }}
           IDEA_OWNER: ${{ github.repository_owner }}
           IDEAS_FILE: /tmp/daily-ideas.json
+          IDEA_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.idea_count || '3' }}
+          IDEA_REPOSITORY_SUFFIX: ${{ github.event_name == 'workflow_dispatch' && inputs.repository_suffix || 'greenfield' }}
         run: node scripts/create-daily-private-ideas.mjs

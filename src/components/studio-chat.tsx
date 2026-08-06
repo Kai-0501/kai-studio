@@ -2,6 +2,7 @@
 
 import {
   ChangeEvent,
+  Fragment,
   FormEvent,
   KeyboardEvent,
   useEffect,
@@ -18,6 +19,8 @@ import {
 } from "@/lib/image-attachments";
 import type { FollowUpMessage } from "@/types/run";
 import type { KaiMemoryStatus } from "@/types/memory";
+import type { CodingRuntimeSnapshot } from "@/lib/coding-runtime";
+import type { ContextOverride, ContextSourceSummary, ConversationMode } from "@/lib/context-router/types";
 import Link from "next/link";
 
 type ChatMessage = {
@@ -26,6 +29,8 @@ type ChatMessage = {
   content: string;
   images?: ImageAttachment[];
   generatedImage?: string;
+  contextSource?: ContextSourceSummary;
+  imageGeneration?: { id: string; status: "complete" | "unverified"; stages: string[]; attempts: Array<{ number: number; status: string; review?: { score: number; overallNotes: string }; compiledPrompt?: string; provider?: string; model?: string }>; intent?: { subject?: string; requirements?: Array<{ id: string; description: string; importance: string }> } };
 };
 
 type ComposerMode = "chat" | "image";
@@ -64,15 +69,27 @@ export function StudioChat({
   const [model, setModel] = useState("gemma4:26b-mlx");
   const [modelOptions, setModelOptions] = useState(fallbackModelOptions);
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(false);
+  const [showContextSourceIndicator, setShowContextSourceIndicator] = useState(true);
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState(initialPrompt);
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState("");
+  const [imageErrorTechnical, setImageErrorTechnical] = useState<{
+    requestId?: string;
+    stage?: string;
+    provider?: string;
+    errorClass?: string;
+    retryAvailable?: boolean;
+    suggestedAction?: string;
+    metadata?: Record<string, string | number | boolean | undefined>;
+  } | null>(null);
   const [runId, setRunId] = useState("");
   const [memoryStatus, setMemoryStatus] = useState<KaiMemoryStatus | null>(null);
   const [isTemporary, setIsTemporary] = useState(false);
+  const [contextOverride, setContextOverride] = useState<ContextOverride>("automatic");
+  const [conversationMode, setConversationMode] = useState<Exclude<ConversationMode, "temporary">>("normal");
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [buildProgress, setBuildProgress] = useState<string[]>([]);
@@ -80,6 +97,8 @@ export function StudioChat({
   const [reviewedBuildId, setReviewedBuildId] = useState("");
   const [isApplyingBuild, setIsApplyingBuild] = useState(false);
   const [activeLoopState, setActiveLoopState] = useState<{ jobId: string; stepCount: number; inspectionCount: number; stepLimit: number; extensionCount: number; awaitingExtension: boolean; elapsedMinutes: number; executionBudgetMinutes: number; automaticExtensionMinutes: number; userExtensionMinutes: number; awaitingTimeDecision: boolean; latestMeaningfulProgress: string; currentPhase: string; currentAgent: string; currentRole: string; contextUtilization: number; currentRepositoryRevision: string; activeReservations: string[]; pendingHandoffs: number; currentBlockers: string[]; resourceWarning: string } | null>(null);
+  const [codingRuntimeState, setCodingRuntimeState] = useState<CodingRuntimeSnapshot | null>(null);
+  const [isDocumentVisible, setIsDocumentVisible] = useState(true);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioCaptureRef = useRef<AudioCapture | null>(null);
@@ -99,6 +118,7 @@ export function StudioChat({
           defaultModel?: string;
           modelAssignments?: { chat?: string; coding?: string };
           longTermMemoryEnabled?: boolean;
+          contextRouting?: { defaultMode?: ContextOverride; showContextSourceIndicator?: boolean };
         };
         const status = await statusResponse.json() as { models?: Array<{ name: string; displayName?: string; provider?: string; status?: string }>; discoveredModels?: Array<{ name: string; displayName?: string; provider?: string; status?: string }>; huggingFaceModels?: Array<{ name: string; displayName?: string; provider?: string; status?: string }> };
         const installed = [...(status.models ?? []), ...(status.discoveredModels ?? []), ...(status.huggingFaceModels ?? [])]
@@ -110,6 +130,8 @@ export function StudioChat({
           : settings.modelAssignments?.chat ?? settings.defaultModel;
         if (preferred) setModel(preferred);
         setLongTermMemoryEnabled(settings.longTermMemoryEnabled === true);
+        if (settings.contextRouting?.defaultMode) setContextOverride(settings.contextRouting.defaultMode);
+        setShowContextSourceIndicator(settings.contextRouting?.showContextSourceIndicator !== false);
       })
       .catch(() => {
         // Keep 26B as the balanced chat default.
@@ -128,6 +150,13 @@ export function StudioChat({
       .then((response) => response.json() as Promise<KaiMemoryStatus>)
       .then(setMemoryStatus)
       .catch(() => setMemoryStatus(null));
+  }, []);
+
+  useEffect(() => {
+    const updateVisibility = () => setIsDocumentVisible(document.visibilityState === "visible");
+    updateVisibility();
+    document.addEventListener("visibilitychange", updateVisibility);
+    return () => document.removeEventListener("visibilitychange", updateVisibility);
   }, []);
 
   useEffect(() => {
@@ -182,6 +211,7 @@ export function StudioChat({
     setDraft("");
     setImages([]);
     setError("");
+    setImageErrorTechnical(null);
     setRunId("");
     shouldAutoFollowRef.current = true;
     sessionIdRef.current = crypto.randomUUID();
@@ -443,9 +473,24 @@ export function StudioChat({
         const body = (await response.json()) as {
           image?: string;
           error?: string;
+          technical?: {
+            requestId?: string;
+            stage?: string;
+            provider?: string;
+            errorClass?: string;
+            retryAvailable?: boolean;
+            suggestedAction?: string;
+            metadata?: Record<string, string | number | boolean | undefined>;
+          };
+          id?: string;
+          status?: "complete" | "unverified";
+          stages?: string[];
+          attempts?: ChatMessage["imageGeneration"] extends infer Details ? Details extends { attempts: infer Attempts } ? Attempts : never : never;
+          intent?: ChatMessage["imageGeneration"] extends infer Details ? Details extends { intent: infer Intent } ? Intent : never : never;
         };
         if (!response.ok || !body.image) {
-          throw new Error(body.error || "Z-Image Turbo could not create that image.");
+          setImageErrorTechnical(body.technical ?? null);
+          throw new Error(body.error || "Kai Studio could not create that image.");
         }
 
         setMessages([
@@ -453,8 +498,9 @@ export function StudioChat({
           {
             id: assistantId,
             role: "assistant",
-            content: `Created locally with Z-Image Turbo.\n\n**Prompt:** ${userContent}`,
+            content: body.status === "unverified" ? "Created locally. Visual review was unavailable, so this candidate is marked unverified." : "Created locally after checking the requested requirements.",
             generatedImage: body.image,
+            imageGeneration: body.id && body.status ? { id: body.id, status: body.status, stages: body.stages ?? [], attempts: body.attempts ?? [], intent: body.intent } : undefined,
           },
         ]);
         return;
@@ -467,9 +513,14 @@ export function StudioChat({
           model,
           trackPerformance: !isTemporary,
           performanceLabel: userContent,
-          useMemory: !longTermMemoryEnabled,
+          useMemory: false,
           useLongTermMemory: longTermMemoryEnabled,
           memorySessionId: sessionIdRef.current,
+          conversationId: runId || sessionIdRef.current,
+          conversationTitle: conversationBeforeAnswer[0]?.content.slice(0, 160),
+          contextOverride,
+          conversationMode: isTemporary ? "temporary" : conversationMode,
+          temporary: isTemporary,
           messages: conversationBeforeAnswer.map((message) => ({
             role: message.role,
             content: message.content,
@@ -485,6 +536,7 @@ export function StudioChat({
         throw new Error(body.error || "Gemma could not answer.");
       }
       if (!response.body) throw new Error("Gemma returned an empty response.");
+      const contextSource = parseContextSource(response.headers.get("X-Kai-Context"));
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -494,7 +546,7 @@ export function StudioChat({
         completeAnswer += decoder.decode(value, { stream: true });
         setMessages([
           ...conversationBeforeAnswer,
-          { id: assistantId, role: "assistant", content: completeAnswer },
+          { id: assistantId, role: "assistant", content: completeAnswer, contextSource },
         ]);
       }
 
@@ -503,6 +555,7 @@ export function StudioChat({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            id: sessionIdRef.current,
             workflowId: "general-intelligence",
             inputLabel: "Chat",
             accountName: userContent.slice(0, 72),
@@ -564,7 +617,7 @@ export function StudioChat({
         status?: "running" | "complete" | "failed";
         error?: string;
         events?: Array<{ type: "progress" | "final" | "error"; message?: string; content?: string; error?: string; readyToPush?: boolean; buildId?: string }>;
-        implementationStepCount?: number; inspectionCount?: number; stepLimit?: number; extensionCount?: number; awaitingExtension?: boolean; elapsedMinutes?: number; executionBudgetMinutes?: number; automaticExtensionMinutes?: number; userExtensionMinutes?: number; awaitingTimeDecision?: boolean; latestMeaningfulProgress?: string; currentPhase?: string; currentAgent?: string; currentRole?: string; contextUtilization?: number; currentRepositoryRevision?: string; activeReservations?: string[]; pendingHandoffs?: number; currentBlockers?: string[]; resourceWarning?: string;
+        implementationStepCount?: number; inspectionCount?: number; stepLimit?: number; extensionCount?: number; awaitingExtension?: boolean; elapsedMinutes?: number; executionBudgetMinutes?: number; automaticExtensionMinutes?: number; userExtensionMinutes?: number; awaitingTimeDecision?: boolean; latestMeaningfulProgress?: string; currentPhase?: string; currentAgent?: string; currentRole?: string; contextUtilization?: number; currentRepositoryRevision?: string; activeReservations?: string[]; pendingHandoffs?: number; currentBlockers?: string[]; resourceWarning?: string; codingRuntime?: CodingRuntimeSnapshot;
       };
       if (!response.ok) throw new Error(job.error || "The active build session could not be reopened.");
       if (resume && !conversation) {
@@ -574,6 +627,7 @@ export function StudioChat({
       }
       const events = job.events ?? [];
       setActiveLoopState({ jobId, stepCount: job.implementationStepCount ?? 0, inspectionCount: job.inspectionCount ?? 0, stepLimit: job.stepLimit ?? 150, extensionCount: job.extensionCount ?? 0, awaitingExtension: job.awaitingExtension === true, elapsedMinutes: job.elapsedMinutes ?? 0, executionBudgetMinutes: job.executionBudgetMinutes ?? 0, automaticExtensionMinutes: job.automaticExtensionMinutes ?? 0, userExtensionMinutes: job.userExtensionMinutes ?? 0, awaitingTimeDecision: job.awaitingTimeDecision === true, latestMeaningfulProgress: job.latestMeaningfulProgress ?? "Preparing the coding session.", currentPhase: job.currentPhase ?? "Implementation", currentAgent: job.currentAgent ?? "implementer-1", currentRole: job.currentRole ?? "implementer", contextUtilization: job.contextUtilization ?? 0, currentRepositoryRevision: job.currentRepositoryRevision ?? "", activeReservations: job.activeReservations ?? [], pendingHandoffs: job.pendingHandoffs ?? 0, currentBlockers: job.currentBlockers ?? [], resourceWarning: job.resourceWarning ?? "" });
+      setCodingRuntimeState(job.codingRuntime ?? null);
       const progress = events.filter((event) => event.type === "progress" && event.message).map((event) => event.message!);
       const finalEvent = [...events].reverse().find((event) => event.type === "final");
       const errorEvent = [...events].reverse().find((event) => event.type === "error");
@@ -586,6 +640,7 @@ export function StudioChat({
         if (finalEvent.readyToPush && finalEvent.buildId) setReviewedBuildId(finalEvent.buildId);
         setIsRunning(false);
         setActiveLoopState(null);
+        setCodingRuntimeState(null);
         return;
       }
       await new Promise((resolve) => window.setTimeout(resolve, 1_000));
@@ -596,6 +651,7 @@ export function StudioChat({
     if (!activeLoopState) return;
     await fetch("/api/github/build/active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: activeLoopState.jobId, decision }) });
     if (decision === "stop" || decision === "time_stop" || decision === "cancel") setActiveLoopState(null);
+    if (decision === "stop" || decision === "time_stop" || decision === "cancel") setCodingRuntimeState(null);
   }
 
   useEffect(() => {
@@ -627,7 +683,8 @@ export function StudioChat({
         const lines = pending.split("\n"); pending = lines.pop() ?? "";
         for (const line of lines) {
           if (!line.trim()) continue;
-          const update = JSON.parse(line) as { type: "progress" | "final" | "error"; message?: string; content?: string; error?: string; readyToPush?: boolean; buildId?: string };
+          const update = JSON.parse(line) as { type: "progress" | "final" | "error"; message?: string; content?: string; error?: string; readyToPush?: boolean; buildId?: string; codingRuntime?: CodingRuntimeSnapshot };
+          if (update.codingRuntime) setCodingRuntimeState(update.codingRuntime);
           if (update.type === "progress" && update.message) setBuildProgress((current) => [...current.slice(-7), update.message!]);
           if (update.type === "error") throw new Error(update.error || "The iterative coding run failed.");
           if (update.type === "final") { finalContent = update.content ?? "The iterative build finished."; nextBuildId = update.buildId ?? ""; readyToPush = update.readyToPush === true; }
@@ -637,7 +694,8 @@ export function StudioChat({
       setMessages((current) => current.map((message, index) => index === current.length - 1 && message.role === "assistant" ? { ...message, content: `${message.content}\n\n${finalContent}` } : message));
       setPendingBuildId("");
       if (readyToPush && nextBuildId) setReviewedBuildId(nextBuildId);
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "The iterative coding run failed."); }
+      setCodingRuntimeState(null);
+    } catch (failure) { setCodingRuntimeState(null); setError(failure instanceof Error ? failure.message : "The iterative coding run failed."); }
     finally { setBuildProgress([]); setIsApplyingBuild(false); }
   }
 
@@ -683,9 +741,14 @@ export function StudioChat({
           model: nextModel,
           trackPerformance: !isTemporary,
           performanceLabel: context[0]?.content ?? "Regenerated chat response",
-          useMemory: !longTermMemoryEnabled,
+          useMemory: false,
           useLongTermMemory: longTermMemoryEnabled,
           memorySessionId: sessionIdRef.current,
+          conversationId: runId || sessionIdRef.current,
+          conversationTitle: context[0]?.content.slice(0, 160),
+          contextOverride,
+          conversationMode: isTemporary ? "temporary" : conversationMode,
+          temporary: isTemporary,
           messages: context.map((message) => ({
             role: message.role,
             content: message.content,
@@ -701,6 +764,7 @@ export function StudioChat({
         throw new Error(body.error || "Kai Studio could not regenerate that reply.");
       }
       if (!response.body) throw new Error("Kai Studio returned an empty response.");
+      const contextSource = parseContextSource(response.headers.get("X-Kai-Context"));
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -710,13 +774,13 @@ export function StudioChat({
         completeAnswer += decoder.decode(value, { stream: true });
         setMessages([
           ...context,
-          { id: assistantId, role: "assistant", content: completeAnswer },
+          { id: assistantId, role: "assistant", content: completeAnswer, contextSource },
         ]);
       }
 
       const regenerated = [
         ...context,
-        { id: assistantId, role: "assistant" as const, content: completeAnswer },
+        { id: assistantId, role: "assistant" as const, content: completeAnswer, contextSource },
       ];
       setMessages(regenerated);
 
@@ -761,9 +825,19 @@ export function StudioChat({
     modelOptions.find((option) => option.value === model) ?? modelOptions[1];
 
   return (
-    <section className="relative flex h-screen min-w-0 flex-1 flex-col overflow-hidden bg-[#0a0d14]">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/[0.06] px-5 sm:px-8">
+    <section className={`kai-chat-canvas kai-chat-${messages.length === 0 ? "empty" : "active"} ${isDocumentVisible ? "" : "kai-chat-hidden"} relative flex h-screen min-w-0 flex-1 flex-col overflow-hidden`}>
+      <div className="kai-chat-atmosphere" aria-hidden="true" />
+      <header className="kai-chat-topbar relative z-10 flex h-14 shrink-0 items-center justify-between border-b border-white/[0.06] px-4 sm:px-7">
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("kai:toggle-chat-sidebar"))}
+            className="rounded-lg border border-white/10 px-2.5 py-2 text-sm text-slate-400 transition hover:border-sky-400/30 hover:bg-sky-400/10 hover:text-sky-200 focus:outline-none focus:ring-2 focus:ring-sky-300/70"
+            aria-label="Toggle Chat sidebar"
+            title="Toggle Chat sidebar (⌘\\)"
+          >
+            ☰
+          </button>
           <Link
             href="/"
             className="rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-400 transition hover:border-sky-400/30 hover:bg-sky-400/10 hover:text-sky-200"
@@ -788,7 +862,7 @@ export function StudioChat({
                 ? "border-sky-400/30 bg-sky-400/15 text-sky-200"
                 : "border-white/10 text-slate-400 hover:bg-white/5 hover:text-white"
             }`}
-            title="Uses Kai Memory but does not save this conversation"
+            title="Keeps only the bounded recent chat in memory and does not save this conversation"
           >
             ◌ Temporary
           </button>
@@ -806,24 +880,21 @@ export function StudioChat({
       <div
         ref={scrollContainerRef}
         onScroll={handleConversationScroll}
-        className="min-h-0 flex-1 overflow-y-auto"
+        className="relative z-10 min-h-0 flex-1 overflow-y-auto"
       >
         {messages.length === 0 ? (
-          <div className="mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center px-6 pb-32 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500 text-xl font-semibold shadow-[0_0_50px_rgba(139,92,246,0.2)]">
-              K
-            </div>
-            <h1 className="mt-7 text-3xl font-medium tracking-tight sm:text-4xl">
+          <div className="kai-empty-state mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center px-6 pb-32 text-center">
+            <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">
               What&apos;s on your mind?
             </h1>
             <p className="mt-3 max-w-lg text-sm leading-6 text-slate-500">
               {isTemporary
-                ? "Kai Memory is available, but this conversation will disappear when you leave."
-                : "Chat with your local Gemma models. Attach a photo whenever visual context helps."}
+                ? "Only this chat's recent turns are available, and the conversation disappears when you leave."
+                : "Chat with your configured local models. Attach a photo whenever visual context helps."}
             </p>
           </div>
         ) : (
-          <div className="mx-auto max-w-3xl px-5 pb-40 pt-8 sm:px-8">
+          <div className="mx-auto max-w-3xl px-5 pb-40 pt-6 sm:px-8">
             <div className="space-y-8">
               {messages.map((message, index) => (
                 <article
@@ -852,13 +923,11 @@ export function StudioChat({
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={message.generatedImage}
-                        alt={message.content || "Image generated by Z-Image Turbo"}
+                        alt={message.content || "Image generated by Kai Studio"}
                         className="h-auto w-full"
                       />
                       <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-3">
-                        <span className="text-xs text-slate-500">
-                          Generated locally · Z-Image Turbo
-                        </span>
+                        <span className="text-xs text-slate-500">{message.imageGeneration?.status === "unverified" ? "Created locally · review unavailable" : "Created locally · requirements checked"}</span>
                         <a
                           href={message.generatedImage}
                           download={`kai-studio-${message.id}.png`}
@@ -867,6 +936,17 @@ export function StudioChat({
                           Download
                         </a>
                       </div>
+                      {message.imageGeneration ? (
+                        <details className="border-t border-white/10 px-4 py-3 text-xs text-slate-500">
+                          <summary className="cursor-pointer text-sky-200">Generation details</summary>
+                          <div className="mt-3 space-y-2 leading-5">
+                            <p>Visual brief: {message.imageGeneration.intent?.subject ?? "Structured locally"}</p>
+                            <p>Attempts: {message.imageGeneration.attempts.length} · status: {message.imageGeneration.status}</p>
+                            {message.imageGeneration.attempts.map((attempt) => <p key={attempt.number}>Attempt {attempt.number}: {attempt.status}{attempt.review ? ` · review score ${Math.round(attempt.review.score * 100)}%` : ""}</p>)}
+                            {message.imageGeneration.stages.map((stage) => <p key={stage}>• {stage}</p>)}
+                          </div>
+                        </details>
+                      ) : null}
                     </div>
                   ) : null}
                   {message.role === "user" ? (
@@ -883,8 +963,20 @@ export function StudioChat({
                           {message.content}
                         </MarkdownResponse>
                       </div>
+                      {showContextSourceIndicator && message.contextSource ? (
+                        <details className="ml-11 mt-3 w-fit max-w-full rounded-full border border-sky-300/15 bg-sky-400/[0.04] px-3 py-1.5 text-[11px] text-slate-500">
+                          <summary className="cursor-pointer list-none text-sky-200/80">
+                            Context · {message.contextSource.label}
+                          </summary>
+                          <p className="mt-2 max-w-md pb-1 leading-5">
+                            {message.contextSource.reason} · {message.contextSource.approximateTokens.toLocaleString()} estimated retrieved tokens
+                            {message.contextSource.fallbackUsed ? " · safe fallback used" : ""}
+                          </p>
+                        </details>
+                      ) : null}
                       {isApplyingBuild && buildProgress.length ? <div className="ml-11 mt-4 space-y-2 rounded-2xl border border-sky-300/15 bg-sky-400/5 p-4 text-sm">{buildProgress.map((step, stepIndex) => <p key={`${stepIndex}-${step}`} className={stepIndex === buildProgress.length - 1 ? "animate-pulse text-sky-200" : "text-slate-500"}>{step}</p>)}</div> : null}
                       {activeLoopState ? <div className="ml-11 mt-3 grid gap-2 rounded-xl border border-sky-300/10 bg-sky-400/[0.035] p-3 text-xs text-slate-500 sm:grid-cols-2"><p>{activeLoopState.currentRole} · {activeLoopState.currentPhase}</p><p>{activeLoopState.elapsedMinutes.toFixed(1)} / {activeLoopState.executionBudgetMinutes || "—"} min</p><p>Implementation: {activeLoopState.stepCount} / {activeLoopState.stepLimit}</p><p>Inspection actions: {activeLoopState.inspectionCount}</p><p>Context: {Math.round(activeLoopState.contextUtilization * 100)}%</p><p>Reservations: {activeLoopState.activeReservations.length} · handoffs: {activeLoopState.pendingHandoffs}</p><p className="sm:col-span-2 text-slate-400">Latest progress: {activeLoopState.latestMeaningfulProgress}</p>{activeLoopState.currentBlockers.length ? <p className="sm:col-span-2 text-amber-200/70">Blocker: {activeLoopState.currentBlockers.at(-1)}</p> : null}{activeLoopState.resourceWarning ? <p className="sm:col-span-2 text-red-200/70">Resource warning: {activeLoopState.resourceWarning}</p> : null}<p className="sm:col-span-2">Automatic time: +{activeLoopState.automaticExtensionMinutes} min · approved time: +{activeLoopState.userExtensionMinutes} min</p></div> : null}
+                      {codingRuntimeState ? <div className="ml-11 mt-3 rounded-xl border border-sky-300/10 bg-sky-400/[0.025] p-3 text-xs text-slate-500"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium text-sky-200">Shared coding runtime</p><p>{codingRuntimeState.plan.codingModel.displayName} · {codingRuntimeState.weightResidency} · {codingRuntimeState.memoryPressure} pressure</p></div><p className="mt-2">{codingRuntimeState.sessions.map((session) => `${session.role}: ${session.status} / ${session.kvCache} / ${Math.round(session.contextLimit / 1024)}K`).join(" · ")}</p><p className="mt-2">Coding retrieval: {codingRuntimeState.codingEmbeddingStatus} · KaiLore retrieval: {codingRuntimeState.kaiLoreEmbeddingStatus}</p>{codingRuntimeState.modelsReleasedBeforeCoding.length ? <p className="mt-2">Released before coding: {codingRuntimeState.modelsReleasedBeforeCoding.join(", ")}</p> : null}{codingRuntimeState.fallbackMode ? <p className="mt-2 text-amber-200/70">Fallback: {codingRuntimeState.fallbackMode}</p> : null}</div> : null}
                       {activeLoopState?.awaitingExtension ? <div className="ml-11 mt-4 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm"><p className="font-medium text-amber-100">The coding loop is paused at {activeLoopState.stepCount} implementation steps.</p><p className="mt-1 text-amber-200/70">Inspection activity: {activeLoopState.inspectionCount}. Extensions used: {activeLoopState.extensionCount}.</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => void decideActiveLoop("extend")} className="rounded-lg bg-amber-300 px-3 py-2 text-xs font-semibold text-slate-950">Extend by 50 steps</button><button type="button" onClick={() => void decideActiveLoop("stop")} className="rounded-lg border border-amber-200/30 px-3 py-2 text-xs text-amber-100">Stop and preserve work</button></div></div> : null}
                       {activeLoopState?.awaitingTimeDecision ? <div className="ml-11 mt-4 rounded-2xl border border-sky-300/30 bg-sky-300/10 p-4 text-sm"><p className="font-medium text-sky-100">The coding job reached its time budget and paused safely.</p><p className="mt-1 text-sky-200/70">Its checkout, memories, reservations, counters, and latest evidence remain preserved.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void decideActiveLoop("time_extend_15")} className="rounded-lg bg-sky-300 px-3 py-2 text-xs font-semibold text-slate-950">Continue 15 min</button><button type="button" onClick={() => void decideActiveLoop("time_extend_30")} className="rounded-lg bg-sky-300 px-3 py-2 text-xs font-semibold text-slate-950">Continue 30 min</button><button type="button" onClick={() => void decideActiveLoop("time_stop")} className="rounded-lg border border-sky-200/30 px-3 py-2 text-xs text-sky-100">Stop for review</button><button type="button" onClick={() => void decideActiveLoop("cancel")} className="rounded-lg border border-red-300/30 px-3 py-2 text-xs text-red-200">Cancel</button></div></div> : null}
                       {index === messages.length - 1 && !isRunning && (
@@ -906,11 +998,11 @@ export function StudioChat({
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0a0d14] via-[#0a0d14] to-transparent px-4 pb-5 pt-14 sm:px-8">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#0a0d14] via-[#0a0d14] to-transparent px-4 pb-5 pt-14 sm:px-8">
         <form
           ref={composerFormRef}
           onSubmit={sendMessage}
-          className="pointer-events-auto mx-auto max-w-3xl rounded-[1.65rem] border border-white/10 bg-[#181c24] p-2 shadow-2xl shadow-black/35 focus-within:border-white/20"
+          className="kai-chat-composer pointer-events-auto mx-auto max-w-3xl rounded-[1.65rem] border border-white/10 bg-[#181c24]/90 p-2 shadow-2xl shadow-black/35 backdrop-blur-xl focus-within:border-sky-300/25"
         >
           {images.length > 0 && (
             <div className="flex flex-wrap gap-2 px-2 pb-2">
@@ -954,9 +1046,23 @@ export function StudioChat({
           />
 
           {error && (
-            <p className="mx-2 mb-2 rounded-lg bg-red-400/10 px-3 py-2 text-xs text-red-300">
-              {error}
-            </p>
+            <div className="mx-2 mb-2 rounded-lg bg-red-400/10 px-3 py-2 text-xs text-red-300">
+              <p>{error}</p>
+              {imageErrorTechnical?.suggestedAction && <p className="mt-1 text-red-200/80">{imageErrorTechnical.suggestedAction}</p>}
+              {imageErrorTechnical && (
+                <details className="mt-2 text-red-200/80">
+                  <summary className="cursor-pointer">Technical details</summary>
+                  <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+                    <dt>Request</dt><dd>{imageErrorTechnical.requestId ?? "Unavailable"}</dd>
+                    <dt>Stage</dt><dd>{imageErrorTechnical.stage ?? "Unavailable"}</dd>
+                    <dt>Runtime</dt><dd>{imageErrorTechnical.provider ?? "Unavailable"}</dd>
+                    <dt>Error class</dt><dd>{imageErrorTechnical.errorClass ?? "Unavailable"}</dd>
+                    <dt>Retry</dt><dd>{imageErrorTechnical.retryAvailable ? "Available" : "Not available"}</dd>
+                    {Object.entries(imageErrorTechnical.metadata ?? {}).filter(([, value]) => value !== undefined).map(([key, value]) => <Fragment key={key}><dt>{key}</dt><dd>{String(value)}</dd></Fragment>)}
+                  </dl>
+                </details>
+              )}
+            </div>
           )}
 
           {(isRecording || isTranscribing) && (
@@ -970,9 +1076,9 @@ export function StudioChat({
             </div>
           )}
 
-          <div className="flex items-center justify-between gap-3 px-1 pb-1">
-            <div className="flex items-center gap-1">
-              <div className="mr-1 flex rounded-full bg-black/20 p-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+              <div className="mr-1 flex shrink-0 rounded-full bg-black/20 p-1">
                 <button
                   type="button"
                   onClick={() => setComposerMode("chat")}
@@ -1019,7 +1125,7 @@ export function StudioChat({
                   isRecording ||
                   isTranscribing
                 }
-                className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-slate-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xl text-slate-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
                 aria-label="Attach photos"
               >
                 ＋
@@ -1031,7 +1137,7 @@ export function StudioChat({
                     isRecording ? void finishRecording() : void startRecording()
                   }
                   disabled={isRunning || isTranscribing}
-                  className={`flex h-9 min-w-9 items-center justify-center rounded-full px-2 text-sm transition disabled:opacity-40 ${
+                  className={`flex h-9 min-w-9 shrink-0 items-center justify-center rounded-full px-2 text-sm transition disabled:opacity-40 ${
                     isRecording
                       ? "border border-sky-300/35 bg-sky-400/20 text-sky-100"
                       : "text-slate-400 hover:bg-sky-400/10 hover:text-sky-200"
@@ -1050,13 +1156,15 @@ export function StudioChat({
               )}
 
               {composerMode === "chat" ? (
-              <label className="relative">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+              <label className="relative min-w-0 max-w-full flex-1 sm:flex-none sm:max-w-[min(18rem,40vw)]">
                 <span className="sr-only">Gemma model</span>
                 <select
                   value={model}
                   onChange={(event) => setModel(event.target.value)}
                   disabled={Boolean(repositoryHandoff) || isRunning || isRecording || isTranscribing}
-                  className="appearance-none rounded-full border border-sky-400/25 bg-sky-400/10 py-2 pl-3 pr-7 text-xs font-medium text-sky-200 outline-none transition hover:bg-sky-400/15 disabled:opacity-50"
+                  title={`${selectedModel.label} · ${selectedModel.detail}`}
+                  className="block min-w-0 max-w-full truncate appearance-none rounded-full border border-sky-400/25 bg-sky-400/10 py-2 pl-3 pr-7 text-xs font-medium text-sky-200 outline-none transition hover:bg-sky-400/15 disabled:opacity-50"
                 >
                   {(repositoryHandoff ? modelOptions.filter((option) => option.value === model) : modelOptions).map((option) => (
                     <option
@@ -1072,9 +1180,30 @@ export function StudioChat({
                   ▾
                 </span>
               </label>
+              {!repositoryHandoff ? <>
+                <label className="relative max-w-full">
+                  <span className="sr-only">Conversation mode</span>
+                  <select value={conversationMode} onChange={(event) => setConversationMode(event.target.value as Exclude<ConversationMode, "temporary">)} disabled={isTemporary || isRunning} className="block max-w-full truncate appearance-none rounded-full border border-sky-400/15 bg-sky-400/[0.06] py-2 pl-3 pr-6 text-xs text-sky-200/80 outline-none disabled:opacity-40">
+                    <option value="normal" className="bg-[#181c24]">Normal</option>
+                    <option value="writing" className="bg-[#181c24]">Writing</option>
+                    <option value="clean-room" className="bg-[#181c24]">Clean room</option>
+                  </select>
+                </label>
+                <label className="relative max-w-full">
+                  <span className="sr-only">Memory sources</span>
+                  <select value={contextOverride} onChange={(event) => setContextOverride(event.target.value as ContextOverride)} disabled={isTemporary || isRunning || conversationMode === "clean-room"} className="block max-w-full truncate appearance-none rounded-full border border-sky-400/15 bg-sky-400/[0.06] py-2 pl-3 pr-6 text-xs text-sky-200/80 outline-none disabled:opacity-40">
+                    <option value="automatic" className="bg-[#181c24]">Memory · Auto</option>
+                    <option value="conversation-only" className="bg-[#181c24]">Conversation only</option>
+                    <option value="kailore-only" className="bg-[#181c24]">KaiLore only</option>
+                    <option value="both" className="bg-[#181c24]">Both</option>
+                    <option value="no-memory" className="bg-[#181c24]">No memory</option>
+                  </select>
+                </label>
+              </> : null}
+              </div>
               ) : (
-                <span className="rounded-full px-3 py-2 text-xs font-medium text-sky-300">
-                  Z-Image Turbo
+                <span className="shrink-0 rounded-full px-3 py-2 text-xs font-medium text-sky-300">
+                  Image generation
                 </span>
               )}
             </div>
@@ -1087,7 +1216,7 @@ export function StudioChat({
                 isRecording ||
                 isTranscribing
               }
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-sky-300/35 bg-sky-400/20 text-sm font-semibold text-sky-100 shadow-[inset_0_1px_0_rgba(186,230,253,0.18)] transition hover:bg-sky-400/30 disabled:border-white/5 disabled:bg-white/5 disabled:text-slate-700"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-sky-300/35 bg-sky-400/20 text-sm font-semibold text-sky-100 shadow-[inset_0_1px_0_rgba(186,230,253,0.18)] transition hover:bg-sky-400/30 disabled:border-white/5 disabled:bg-white/5 disabled:text-slate-700"
               aria-label="Send message"
             >
               {isRunning ? "·" : "↑"}
@@ -1096,9 +1225,9 @@ export function StudioChat({
         </form>
         <p className="pointer-events-auto mx-auto mt-2 max-w-3xl text-center text-[10px] text-slate-700">
           {isTemporary
-            ? "Temporary chat · Kai Memory stays active · nothing is saved to History."
+            ? "Temporary chat · recent turns only · nothing is saved or indexed."
             : composerMode === "image"
-            ? "Z-Image Turbo creates images locally on this Mac."
+            ? "Kai Studio plans, validates, generates, and reviews every image locally."
             : repositoryHandoff
               ? `Secure build for ${repositoryHandoff.fullName} · independent security review, configured coding model, and human approval.`
               : `${selectedModel.label} runs locally. Check important information.`}
@@ -1110,4 +1239,14 @@ export function StudioChat({
 
 function modelLabel(model: string) {
   return model.replace(/^hf:/, "").replace(/[-_:]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function parseContextSource(value: string | null): ContextSourceSummary | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value)) as ContextSourceSummary;
+    return parsed && typeof parsed.label === "string" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }

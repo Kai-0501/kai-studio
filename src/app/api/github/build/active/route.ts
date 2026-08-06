@@ -8,6 +8,8 @@ import {
 import { decideCodingLoop, getCodingLoop } from "@/lib/coding-loop-control";
 import { decideCodingExecutionBudget, getCodingExecutionBudget } from "@/lib/coding-execution-control";
 import { elapsedMinutes } from "@/lib/execution-budget";
+import { resolveRole } from "@/lib/models/runtime";
+import { codingRuntimeCoordinator } from "@/lib/coding-runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +36,7 @@ async function consumeEvents(response: Response, onEvent: (event: ActiveBuildEve
 
 function addEvent(job: ActiveBuildJob, event: ActiveBuildEvent) {
   job.events.push(event);
-  for (const key of ["elapsedMinutes", "executionBudgetMinutes", "automaticExtensionMinutes", "userExtensionMinutes", "awaitingTimeDecision", "latestMeaningfulProgress", "currentAgent", "currentRole", "currentPhase", "contextUtilization", "currentRepositoryRevision", "activeReservations", "pendingHandoffs", "currentBlockers", "resourceWarning"] as const) {
+  for (const key of ["elapsedMinutes", "executionBudgetMinutes", "automaticExtensionMinutes", "userExtensionMinutes", "awaitingTimeDecision", "latestMeaningfulProgress", "currentAgent", "currentRole", "currentPhase", "contextUtilization", "currentRepositoryRevision", "activeReservations", "pendingHandoffs", "currentBlockers", "resourceWarning", "codingRuntime"] as const) {
     if (event[key] !== undefined) Object.assign(job, { [key]: event[key] });
   }
   job.updatedAt = new Date().toISOString();
@@ -59,10 +61,13 @@ function syncLoop(job: ActiveBuildJob) {
     job.latestMeaningfulProgress = budget.latestMeaningfulProgress;
     job.currentPhase = budget.phase;
   }
+  job.codingRuntime = codingRuntimeCoordinator.snapshot(job.pendingBuildId);
 }
 
 async function runJob(job: ActiveBuildJob, origin: string) {
   try {
+    const codingAgent = await resolveRole("coder.primary");
+    const codingLabel = codingAgent.model.displayName;
     let pendingBuildId = "";
     await consumeEvents(
       await fetch(`${origin}/api/github/build`, {
@@ -79,7 +84,7 @@ async function runJob(job: ActiveBuildJob, origin: string) {
     if (!pendingBuildId) throw new Error("The build preparation stopped without an approved build.");
     job.pendingBuildId = pendingBuildId;
     syncLoop(job);
-    addEvent(job, { type: "progress", message: job.diagnosticRunId ? "Qwen is starting the selected diagnostics implementation now." : "The security preflight passed. Qwen is starting the bounded implementation now." });
+    addEvent(job, { type: "progress", message: job.diagnosticRunId ? `${codingLabel} is starting the selected diagnostics implementation now.` : `The security preflight passed. ${codingLabel} is starting the bounded implementation now.` });
     await consumeEvents(
       await fetch(`${origin}/api/github/build/apply`, {
         method: "POST",
@@ -137,7 +142,7 @@ export async function POST(request: NextRequest) {
     task: body.task.trim(),
     ...(typeof body.diagnosticRunId === "string" ? { diagnosticRunId: body.diagnosticRunId } : {}),
     status: "running",
-    events: [{ type: "progress", message: typeof body.diagnosticRunId === "string" ? "The selected diagnostics plan is being handed directly to Qwen." : "The secure build session is starting." }],
+    events: [{ type: "progress", message: typeof body.diagnosticRunId === "string" ? "The selected diagnostics plan is being handed directly to the configured coding agent." : "The secure build session is starting." }],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

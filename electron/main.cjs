@@ -20,6 +20,18 @@ let activeBuildMonitor;
 let activeBuildPowerBlocker;
 let registeredModelRoots = [];
 
+function stopProcessGroup(child) {
+  if (!child?.pid || child.exitCode !== null) return;
+  try {
+    // Packaged Next.js and llama.cpp runtimes may create their own workers.
+    // They are launched as process-group leaders so quitting Kai Studio can
+    // stop the complete local runtime rather than leaving an orphan server.
+    process.kill(-child.pid, "SIGTERM");
+  } catch (error) {
+    if (error?.code !== "ESRCH") child.kill("SIGTERM");
+  }
+}
+
 const managedLocalModels = new Map();
 
 function localModelId(modelPath) {
@@ -116,6 +128,7 @@ function startServer() {
         : path.join(__dirname, "..", "vendor", "audio", "fluidaudiocli"),
     },
     stdio: ["ignore", "pipe", "pipe", "ipc"],
+    detached: true,
   });
 
   serverProcess.stderr?.on("data", (chunk) => console.error(String(chunk)));
@@ -192,7 +205,7 @@ async function ensureHuggingFaceModel(modelId) {
   }
   if (activeHuggingFaceModel === modelId && llamaProcess?.exitCode === null) return;
 
-  llamaProcess?.kill();
+  stopProcessGroup(llamaProcess);
   llamaProcess = undefined;
   activeHuggingFaceModel = undefined;
 
@@ -219,6 +232,7 @@ async function ensureHuggingFaceModel(modelId) {
 
   llamaProcess = spawn(executable, args, {
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
   llamaProcess.stderr?.on("data", (chunk) => console.error(String(chunk)));
   llamaProcess.on("exit", () => {
@@ -413,8 +427,8 @@ app.on("before-quit", () => {
   if (activeBuildPowerBlocker !== undefined && powerSaveBlocker.isStarted(activeBuildPowerBlocker)) {
     powerSaveBlocker.stop(activeBuildPowerBlocker);
   }
-  serverProcess?.kill();
-  llamaProcess?.kill();
+  stopProcessGroup(serverProcess);
+  stopProcessGroup(llamaProcess);
   modelControlServer?.close();
 });
 

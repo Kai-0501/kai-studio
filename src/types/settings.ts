@@ -6,6 +6,57 @@ export type KaiStudioSettings = {
   codingContextLimit: 16384 | 32768;
   codingBudgetOverrideMinutes: number | null;
   modelSearchRoots: string[];
+  embeddingRuntime: EmbeddingRuntimeSettings;
+  codingRuntime: CodingRuntimeSettings;
+  imageGeneration: ImageGenerationSettings;
+  contextRouting: ContextRoutingSettings;
+};
+
+export type ContextRoutingSettings = {
+  defaultMode: "automatic" | "conversation-only" | "kailore-only" | "both" | "no-memory";
+  recentTurnTokenBudget: number;
+  conversationTokenBudget: number;
+  kaiLoreTokenBudget: number;
+  hybridTokenBudget: number;
+  routerIdleTimeoutSeconds: number;
+  automaticCheckpointing: boolean;
+  writingContinuityBias: boolean;
+  deterministicFallback: "smallest-sufficient";
+  showContextSourceIndicator: boolean;
+};
+
+export type CodingRuntimeSettings = {
+  executionMode: "single-agent" | "multi-agent-sequential";
+  inactiveAgentCachePolicy: "checkpoint-reconstruct" | "retain-bounded";
+  releaseIdleDiagnosticsBeforeCoding: boolean;
+  releaseIdleKaiLoreBeforeCoding: boolean;
+  modelIdleTimeoutSeconds: number;
+  memoryPressureFallback: "offer-16k" | "pause" | "single-agent";
+};
+
+export type EmbeddingRuntimeSettings = {
+  kaiLore: EmbeddingRuntimePolicy;
+  coding: EmbeddingRuntimePolicy;
+  conversation: EmbeddingRuntimePolicy;
+};
+
+export type ImageGenerationSettings = {
+  autoReview: boolean;
+  maxCorrectiveRetries: 0 | 1 | 2;
+  mandatoryConfidenceThreshold: number;
+  retryPreferredRequirements: boolean;
+  reviewTimeoutSeconds: number;
+  saveAllAttempts: boolean;
+  preserveCompiledPrompts: boolean;
+  visionUnavailableBehaviour: "return-unverified" | "fail";
+};
+
+export type EmbeddingRuntimePolicy = {
+  idleTimeoutSeconds: number;
+  minimumWarmSeconds: number;
+  retainDuringIndexing: boolean;
+  retainAcrossTransitions: boolean;
+  evictOnMemoryPressure: boolean;
 };
 
 export type ModelAssignments = {
@@ -17,18 +68,30 @@ export type ModelAssignments = {
   coding: string;
   security: string;
   vision: string;
+  imagePlanner: string;
+  image: string;
   diagnostics: string;
   diagnosticsParser: string;
   progressAssessor: string;
   orchestration: string;
   review: string;
-  embedding: string;
+  /**
+   * Legacy shared embedding assignment. Kept only so existing settings files
+   * can migrate without being discarded; new code must use the two scoped
+   * assignments below.
+   */
+  embedding?: string;
+  kaiLoreEmbedding: string;
+  codingEmbedding: string;
+  contextRouter: string;
+  conversationEmbedding: string;
 };
 
 export type LocalModel = {
   name: string;
   size: number;
   modifiedAt: string;
+  capabilities?: string[];
   provider?: "ollama" | "huggingface" | "mlx" | "llamacpp" | "manual";
   displayName?: string;
   source?: "ollama" | "kai-managed-huggingface" | "huggingface-cache" | "user-managed-local" | "manual-registration" | "managed-mlx" | "managed-llamacpp";

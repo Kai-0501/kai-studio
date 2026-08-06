@@ -14,11 +14,17 @@ outputs, and memory stay local.
 
 - **Desktop chat** with automatically discovered local models from Ollama and
   Hugging Face-compatible runtimes
-- **Temporary chats** that use memory without adding history
+- **Temporary chats** with recent-turn continuity only: no history, archive,
+  checkpoint, conversation index, or KaiLore retrieval
 - **Tiered local memory** with human-editable Markdown records and local
   hybrid retrieval
+- **Retrieval-aware conversation continuity** with a configurable Context
+  Router, bounded recent turns, exact older-message rehydration, branch-safe
+  archives, and explicit per-message source controls
 - **Local dictation** using Parakeet TDT 0.6B v2
-- **Local image generation** through Z-Image Turbo
+- **Bounded local image generation** through a model-configurable pipeline:
+  structured visual intent, deterministic validation, generation, vision review,
+  and at most two corrective retries—never a raw prompt bypass
 - **Owned-repository GitHub vault** that syncs only repositories belonging to
   the authenticated account and excludes forks
 - **Two-stage secure builds**: a bounded Gemma security review runs first,
@@ -66,7 +72,7 @@ Next.js application + local API routes
         │      ├── managed llama.cpp / Hugging Face models
         │      ├── OpenAI-compatible endpoints
         │      └── Gemini-compatible cloud orchestration
-        ├── Z-Image Turbo → local image generation
+        ├── Bounded image pipeline → configured local image provider + vision review
         ├── FluidAudio → Parakeet speech-to-text
         ├── GitHub CLI → owned repository metadata and README cache
         └── Local filesystem + SQLite → history, settings, telemetry and memory
@@ -79,11 +85,17 @@ local routing, persistence, and retrieval.
 For the memory design, see
 [docs/memory-architecture.md](docs/memory-architecture.md).
 
+For retrieval-domain isolation, context routing, and conversation archives, see
+[docs/retrieval-architecture.md](docs/retrieval-architecture.md).
+
 For secure repository automation and bounded coding context, see
 [docs/secure-build-architecture.md](docs/secure-build-architecture.md).
 
 For model discovery and role routing, see
 [docs/model-runtime.md](docs/model-runtime.md).
+
+For the bounded image-generation policy and provider-neutral flow, see
+[docs/image-generation-architecture.md](docs/image-generation-architecture.md).
 
 For the GPT-OSS Safeguard policy and official Harmony references, see
 [docs/security/gpt-oss-safeguard-policy.md](docs/security/gpt-oss-safeguard-policy.md).

@@ -54,6 +54,20 @@ Context is proactively compacted under a configurable 16K or 32K budget, with
 dedicated allocations for instructions, scope, exact evidence, coordination,
 warm state, recent tools, and response headroom.
 
+The three roles share one coding-model weight residency but never share live KV
+state. The default policy checkpoints and reconstructs inactive logical
+sessions at each role boundary. Planner output reaches the implementer only as
+a validated handoff; reviewer findings return through the same bounded path.
+The runtime uses a reference-counted outer coding lease so nested generation
+does not reload the weights between roles.
+
+Memory pressure is evaluated before the lease is acquired. The conservative
+order is: evict eligible idle coding retrieval, request safe release of idle
+KaiLore and diagnostics/orchestration residencies, reduce a requested 32K
+context to 16K, then apply the configured single-agent or pause fallback. No
+active lease, external runtime, personal file, or unrelated model is unloaded
+to make room for coding.
+
 ## Durable user experience
 
 Active build jobs are registered independently from page components. Their

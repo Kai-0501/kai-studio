@@ -3,11 +3,12 @@ import { ollamaProvider } from "@/lib/models/ollama-provider";
 import { openAiCompatibleProvider } from "@/lib/models/openai-compatible-provider";
 import { geminiProvider } from "@/lib/models/gemini-provider";
 import { recordInference } from "@/lib/models/telemetry";
-import type { GenerateRequest, GenerateResult, ModelCapability, ModelDefinition, ModelProvider, ModelRole } from "@/lib/models/types";
+import type { GenerateRequest, GenerateResult, ImageGenerationRequest, ImageGenerationResult, ModelCapability, ModelDefinition, ModelProvider, ModelRole } from "@/lib/models/types";
 import { ModelRuntimeError } from "@/lib/models/types";
 import { readSettings } from "@/lib/settings-store";
 import { ensureManagedLocalModel, isManagedLocalModel } from "@/lib/local-model-runtime";
 import type { ModelAssignments } from "@/types/settings";
+import { generativeRuntimeManager } from "@/lib/generative-runtime";
 
 const providers = new Map<string, ModelProvider>([
   [ollamaProvider.id, ollamaProvider],
@@ -23,12 +24,18 @@ const assignmentKeyByRole: Partial<Record<ModelRole, keyof ModelAssignments>> = 
   "security.postflight": "security",
   "editorial.primary": "editorial",
   "vision.extractor": "vision",
+  "vision.reviewer": "vision",
+  "image.planner": "imagePlanner",
+  "image.generator": "image",
   "diagnostics.primary": "diagnostics",
   "diagnostics.parser": "diagnosticsParser",
   "progress.assessor": "progressAssessor",
   "orchestrator.cloud": "orchestration",
   "review.primary": "review",
-  "memory.embedding": "embedding",
+  "context.router": "contextRouter",
+  "kailore.embedding": "kaiLoreEmbedding",
+  "coding.embedding": "codingEmbedding",
+  "conversation.embedding": "conversationEmbedding",
   "chat.default": "chat",
 };
 
@@ -44,6 +51,16 @@ export async function resolveRole(role: ModelRole, signal?: AbortSignal) {
   const assignedProviderModel = assignmentKey ? settings.modelAssignments[assignmentKey] : undefined;
   const template = modelRegistry.get(route.primary);
   if (assignedProviderModel && template) {
+    const isEmbeddingRole = role === "kailore.embedding" || role === "coding.embedding" || role === "conversation.embedding";
+    // Embedding is intentionally capability-specific. A generative model may be
+    // selected in Settings for a future adapter, but it must not be treated as
+    // an embedding runtime until that adapter explicitly declares support.
+    if (isEmbeddingRole && !["local-hash", "local.memory-hash-embedding"].includes(assignedProviderModel)) {
+      throw new ModelRuntimeError(
+        `${assignedProviderModel} cannot be assigned to ${assignmentKey} until a compatible embedding adapter is installed. Kai Studio will use lexical retrieval where available.`,
+        "configuration",
+      );
+    }
     const assigned: ModelDefinition = {
       ...template,
       id: `assigned.${assignmentKey}.${assignedProviderModel}`,
@@ -81,13 +98,50 @@ export async function generateForRole(request: GenerateRequest): Promise<Generat
   let selected: Awaited<ReturnType<typeof resolveRole>> | undefined;
   try {
     selected = await resolveRole(request.role, request.signal);
-    const result = await selected.provider.generate(selected.model, request);
+    const settings = await readSettings();
+    const lease = await generativeRuntimeManager.acquire({
+      model: selected.model,
+      role: request.role,
+      workflow: request.workflow,
+      minimumWarmSeconds: request.role === "coder.primary" ? 30 : 10,
+      idleTimeoutSeconds: request.role === "coder.primary" ? settings.codingRuntime.modelIdleTimeoutSeconds : request.role === "context.router" ? settings.contextRouting.routerIdleTimeoutSeconds : 90,
+    });
+    let result: GenerateResult;
+    try {
+      result = await selected.provider.generate(selected.model, request);
+    } finally {
+      await lease.release("inference-complete");
+    }
     await recordInference({ timestamp: new Date().toISOString(), workflow: request.workflow, role: request.role, modelId: selected.model.id, provider: selected.model.provider, fallbackUsed: selected.fallbackUsed, latencyMs: result.latencyMs, inputTokens: result.usage?.inputTokens, outputTokens: result.usage?.outputTokens, toolCallCount: result.toolCalls.length, retryCount: 0, status: "completed" });
     return result;
   } catch (error) {
     const normalized = error instanceof ModelRuntimeError ? error : new ModelRuntimeError(error instanceof Error ? error.message : "Model inference failed.", "provider", selected?.model.provider);
     await recordInference({ timestamp: new Date().toISOString(), workflow: request.workflow, role: request.role, modelId: selected?.model.id ?? "unresolved", provider: selected?.model.provider ?? "ollama", fallbackUsed: selected?.fallbackUsed ?? false, latencyMs: performance.now() - started, toolCallCount: 0, retryCount: 0, status: "failed", errorCategory: normalized.category });
     throw normalized;
+  }
+}
+
+/** Image generation uses the same registry, availability checks, and runtime
+ * leases as language inference. Components never choose a provider directly. */
+export async function generateImageForRole(role: "image.generator", request: ImageGenerationRequest): Promise<ImageGenerationResult> {
+  const selected = await resolveRole(role, request.signal);
+  if (!selected.provider.generateImage) throw new ModelRuntimeError(`The configured image provider (${selected.model.provider}) cannot generate images.`, "capability", selected.model.provider);
+  if (!selected.provider.validateImageRuntime) {
+    throw new ModelRuntimeError(`The configured image provider (${selected.model.provider}) has no validated image-runtime adapter.`, "capability", selected.model.provider);
+  }
+  await selected.provider.validateImageRuntime(selected.model, request.signal);
+  // Z-Image is large enough that keeping the just-used planner warm can leave
+  // too little unified memory for the native image runner. Evict only idle,
+  // Kai-managed weights; active and externally managed models are protected.
+  await generativeRuntimeManager.evictIdle({ reason: "image-generation-capacity" });
+  // Image-only Ollama models expose a dedicated image API and must never be
+  // preloaded through Ollama's text-generation endpoint. The image adapter
+  // owns that first load while the residency manager still owns lifecycle.
+  const lease = await generativeRuntimeManager.acquire({ model: selected.model, role, workflow: "kai-studio.image-generation", minimumWarmSeconds: 10, idleTimeoutSeconds: 90, providerOwnsInitialLoad: true });
+  try {
+    return await selected.provider.generateImage(selected.model, request);
+  } finally {
+    await lease.release("image-generation-complete");
   }
 }
 

@@ -11,7 +11,8 @@ export type ModelCapability =
   | "tools"
   | "vision"
   | "reasoning"
-  | "embedding";
+  | "embedding"
+  | "image-generation";
 
 export type ModelRole =
   | "coder.primary"
@@ -21,11 +22,17 @@ export type ModelRole =
   | "orchestrator.cloud"
   | "chat.default"
   | "vision.extractor"
+  | "vision.reviewer"
+  | "image.planner"
+  | "image.generator"
   | "diagnostics.primary"
   | "diagnostics.parser"
   | "progress.assessor"
   | "review.primary"
-  | "memory.embedding";
+  | "context.router"
+  | "kailore.embedding"
+  | "coding.embedding"
+  | "conversation.embedding";
 
 
 export type CanonicalImage = { type: "image"; data: string; mimeType?: string };
@@ -71,6 +78,12 @@ export type ModelDefinition = {
   defaultTemperature: number;
   defaultContextAllocation: number;
   enabled: boolean;
+  family?: string;
+  parameterClass?: string;
+  architecture?: "dense" | "moe" | "unknown";
+  quantization?: string;
+  /** Only set when the runtime reports a trustworthy value. */
+  estimatedResidentBytes?: number;
 };
 
 export type RoleRoute = {
@@ -100,10 +113,32 @@ export type GenerateResult = {
   provider: ModelProviderId;
 };
 
+export type ImageGenerationRequest = {
+  prompt: string;
+  width: number;
+  height: number;
+  seed?: number;
+  signal?: AbortSignal;
+};
+
+export type ImageGenerationResult = {
+  imageBase64: string;
+  mimeType: string;
+  latencyMs: number;
+  modelId: string;
+  provider: ModelProviderId;
+};
+
 export type ModelProvider = {
   id: ModelProviderId;
   health(model: ModelDefinition, signal?: AbortSignal): Promise<boolean>;
+  /**
+   * Optional, operation-specific readiness check. A model being visible to a
+   * runtime is not sufficient evidence that the runtime can execute images.
+   */
+  validateImageRuntime?(model: ModelDefinition, signal?: AbortSignal): Promise<void>;
   generate(model: ModelDefinition, request: GenerateRequest): Promise<GenerateResult>;
+  generateImage?(model: ModelDefinition, request: ImageGenerationRequest): Promise<ImageGenerationResult>;
   stream?(model: ModelDefinition, request: GenerateRequest): Promise<ReadableStream<Uint8Array>>;
 };
 
@@ -116,8 +151,15 @@ export class ModelRuntimeError extends Error {
     | "rate-limit"
     | "timeout"
     | "cancelled"
-    | "provider";
+    | "provider"
+    | "provider-transport"
+    | "provider-declared"
+    | "response-decode"
+    | "missing-image"
+    | "artifact-validation";
   readonly provider?: ModelProviderId;
+  /** Safe runtime metadata for diagnostics; never include prompts, paths, or secrets. */
+  readonly details?: Record<string, string | number | boolean | undefined>;
 
   constructor(
     message: string,
@@ -129,12 +171,19 @@ export class ModelRuntimeError extends Error {
       | "rate-limit"
       | "timeout"
       | "cancelled"
-      | "provider",
+      | "provider"
+      | "provider-transport"
+      | "provider-declared"
+      | "response-decode"
+      | "missing-image"
+      | "artifact-validation",
     provider?: ModelProviderId,
+    details?: Record<string, string | number | boolean | undefined>,
   ) {
     super(message);
     this.name = "ModelRuntimeError";
     this.category = category;
     this.provider = provider;
+    this.details = details;
   }
 }

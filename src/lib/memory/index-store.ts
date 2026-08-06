@@ -6,6 +6,8 @@ import type { MemoryRecord } from "@/types/memory";
 import { memoryIndexFile } from "@/lib/memory/config";
 import { parseMarkdownMemory } from "@/lib/memory/frontmatter";
 import { localEmbeddingProvider } from "@/lib/memory/embeddings";
+import { createScopedHashEmbedder, type ScopedEmbeddingProvider } from "@/lib/retrieval/embedding-provider";
+import { embeddingIdentity, type EmbeddingIdentity } from "@/lib/retrieval/identity";
 
 type DatabaseRow = Record<string, unknown>;
 
@@ -79,13 +81,16 @@ export class SqliteMemoryIndex {
   private database: DatabaseSync | null = null;
   private readonly rootDirectory: string;
   private readonly databaseFile: string;
+  private readonly embedding: ScopedEmbeddingProvider;
 
   constructor(
     rootDirectory: string,
     databaseFile = memoryIndexFile,
+    options: { embedding?: ScopedEmbeddingProvider } = {},
   ) {
     this.rootDirectory = rootDirectory;
     this.databaseFile = databaseFile;
+    this.embedding = options.embedding ?? createScopedHashEmbedder(embeddingIdentity("kailore", localEmbeddingProvider.id, { modelRevision: localEmbeddingProvider.version, dimensions: localEmbeddingProvider.dimensions, chunkerVersion: "kailore-v1" }));
   }
 
   async initialize() {
@@ -116,6 +121,21 @@ export class SqliteMemoryIndex {
         modified_at TEXT NOT NULL,
         indexed_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS index_generations (
+        generation_id TEXT PRIMARY KEY,
+        retrieval_domain TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        model_revision TEXT NOT NULL,
+        dimensions INTEGER NOT NULL,
+        normalization TEXT NOT NULL,
+        metric TEXT NOT NULL,
+        chunker_version TEXT NOT NULL,
+        schema_version INTEGER NOT NULL,
+        corpus_version TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
         record_id UNINDEXED,
         title,
@@ -128,6 +148,16 @@ export class SqliteMemoryIndex {
     `);
     try { this.database.exec("ALTER TABLE memory_records ADD COLUMN dense_vector_json TEXT NOT NULL DEFAULT '[]'"); } catch { /* already migrated */ }
     try { this.database.exec("ALTER TABLE memory_records ADD COLUMN embedding_provider TEXT"); } catch { /* already migrated */ }
+    this.ensureGenerationMetadata();
+  }
+
+  identity(): EmbeddingIdentity { return this.embedding.identity; }
+
+  embedQuery(text: string) { return this.embedding.available ? this.embedding.embed(text) : []; }
+
+  generationStatus() {
+    const row = this.db().prepare("SELECT * FROM index_generations WHERE retrieval_domain = 'kailore' ORDER BY updated_at DESC LIMIT 1").get() as DatabaseRow | undefined;
+    return row ?? null;
   }
 
   async sync(): Promise<MemoryIndexStats> {
@@ -285,8 +315,8 @@ export class SqliteMemoryIndex {
           searchableText,
           JSON.stringify(metadata),
           JSON.stringify(sparseVector(searchableText)),
-          JSON.stringify(localEmbeddingProvider.enabled ? localEmbeddingProvider.embed(searchableText) : []),
-          localEmbeddingProvider.enabled ? `${localEmbeddingProvider.id}@${localEmbeddingProvider.version}` : null,
+          JSON.stringify(this.embedding.available ? this.embedding.embed(searchableText) : []),
+          this.embedding.available ? `${this.embedding.identity.modelId}@${this.embedding.identity.modelRevision}` : null,
         );
       database.prepare("DELETE FROM memory_fts WHERE record_id = ?").run(record.id);
       database
@@ -331,5 +361,22 @@ export class SqliteMemoryIndex {
       throw new Error("Memory index must be initialized before use.");
     }
     return this.database;
+  }
+
+  private ensureGenerationMetadata() {
+    const database = this.db();
+    const identity = this.embedding.identity;
+    const latest = database.prepare("SELECT * FROM index_generations WHERE retrieval_domain = 'kailore' ORDER BY updated_at DESC LIMIT 1").get() as DatabaseRow | undefined;
+    const compatible = latest
+      && String(latest.model_id) === identity.modelId
+      && String(latest.model_revision) === identity.modelRevision
+      && Number(latest.dimensions) === identity.dimensions
+      && String(latest.chunker_version) === identity.chunkerVersion;
+    if (compatible) return;
+    if (latest) database.prepare("UPDATE index_generations SET status = 'legacy', updated_at = ? WHERE generation_id = ?").run(new Date().toISOString(), String(latest.generation_id));
+    const corpusVersion = "pending-sync";
+    const generation = `${identity.retrievalDomain}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    database.prepare(`INSERT INTO index_generations (generation_id, retrieval_domain, model_id, model_revision, dimensions, normalization, metric, chunker_version, schema_version, corpus_version, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`)
+      .run(generation, identity.retrievalDomain, identity.modelId, identity.modelRevision, identity.dimensions, identity.normalization, identity.metric, identity.chunkerVersion, identity.schemaVersion, corpusVersion, new Date().toISOString(), new Date().toISOString());
   }
 }

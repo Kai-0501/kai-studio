@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       const emit = (event: object) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       try {
         if (diagnosticsBypass) {
-          emit({ type: "progress", message: "I verified the saved human-selected diagnostics plan. This local workflow goes directly to Qwen." });
+          emit({ type: "progress", message: "I verified the saved human-selected diagnostics plan. This local workflow goes directly to the configured coding agent." });
           const buildSummary = requestedTask.split("\n")[0].slice(0, 160) || "Implement selected Kai Studio diagnostics";
           const pending: PendingBuild = {
             id: crypto.randomUUID(),
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
             createdAt: new Date().toISOString(),
           };
           await savePendingBuild(pending);
-          emit({ type: "final", buildId: pending.id, content: "The selected diagnostics plan is ready for direct local implementation by Qwen." });
+          emit({ type: "final", buildId: pending.id, content: "The selected diagnostics plan is ready for direct local implementation by the configured coding agent." });
           return;
         }
         emit({ type: "progress", message: "I’m checking repository ownership and preparing a read-only snapshot first." });

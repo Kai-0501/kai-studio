@@ -3,6 +3,13 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --kai-baby-navy: #173b63;
+  --kai-glow-opacity: 0.2;
+  --kai-glow-blur: 72px;
+  --kai-empty-atmosphere-amplitude: 1;
+  --kai-active-atmosphere-amplitude: 0.45;
+  --kai-atmosphere-duration: 16s;
+  --kai-sidebar-transition: 220ms;
 }
 
 @theme inline {
@@ -23,4 +30,50 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* The Chat canvas stays visually alive without adding a React animation loop. */
+.kai-chat-canvas {
+  isolation: isolate;
+  background: #080c14;
+}
+
+.kai-chat-empty { --kai-current-atmosphere-amplitude: var(--kai-empty-atmosphere-amplitude); }
+.kai-chat-active { --kai-current-atmosphere-amplitude: var(--kai-active-atmosphere-amplitude); }
+
+.kai-chat-atmosphere {
+  position: absolute;
+  z-index: 0;
+  inset: 25% -12% -30%;
+  pointer-events: none;
+  opacity: var(--kai-glow-opacity);
+  background:
+    radial-gradient(ellipse 58% 46% at 50% 100%, color-mix(in srgb, var(--kai-baby-navy) 85%, transparent), transparent 72%),
+    radial-gradient(ellipse 34% 27% at 19% 83%, color-mix(in srgb, #245783 45%, transparent), transparent 78%);
+  filter: blur(var(--kai-glow-blur));
+  transform: translate3d(0, 0, 0) scale(1);
+  animation: kai-atmosphere-breathe var(--kai-atmosphere-duration) ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+
+.kai-chat-active .kai-chat-atmosphere {
+  opacity: calc(var(--kai-glow-opacity) * var(--kai-current-atmosphere-amplitude));
+}
+
+.kai-chat-hidden .kai-chat-atmosphere {
+  animation-play-state: paused;
+}
+
+@keyframes kai-atmosphere-breathe {
+  0% { transform: translate3d(-1.5%, 1%, 0) scale(0.98); opacity: calc(var(--kai-glow-opacity) * var(--kai-current-atmosphere-amplitude) * 0.78); }
+  100% { transform: translate3d(1.5%, -1%, 0) scale(1.04); opacity: calc(var(--kai-glow-opacity) * var(--kai-current-atmosphere-amplitude)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kai-chat-atmosphere { animation: none; transform: none; }
+  .kai-chat-topbar, .kai-chat-composer { transition: none; }
+}
+
+@media (min-width: 768px) {
+  .kai-chat-shell-collapsed .kai-chat-composer { max-width: 52rem; }
 }

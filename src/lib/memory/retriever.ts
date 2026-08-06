@@ -13,7 +13,8 @@ import {
   sparseVector,
   SqliteMemoryIndex,
 } from "@/lib/memory/index-store";
-import { denseCosine, localEmbeddingProvider } from "@/lib/memory/embeddings";
+import { denseCosine } from "@/lib/memory/embeddings";
+import { withEmbeddingLease, type EmbeddingRuntimeDescriptor } from "@/lib/embedding-runtime";
 
 export interface MemoryRetriever {
   retrieve(
@@ -59,12 +60,22 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     skippedFiles: 0,
   };
   private readonly index: SqliteMemoryIndex;
+  private readonly runtime?: EmbeddingRuntimeDescriptor;
 
-  constructor(index: SqliteMemoryIndex) {
+  constructor(index: SqliteMemoryIndex, runtime?: EmbeddingRuntimeDescriptor) {
     this.index = index;
+    this.runtime = runtime;
   }
 
   async retrieve(
+    query: string,
+    overrides: Partial<MemoryRetrievalOptions> = {},
+  ): Promise<MemoryRetrievalReport> {
+    if (this.runtime) return withEmbeddingLease(this.runtime, () => this.retrieveInternal(query, overrides));
+    return this.retrieveInternal(query, overrides);
+  }
+
+  private async retrieveInternal(
     query: string,
     overrides: Partial<MemoryRetrievalOptions> = {},
   ): Promise<MemoryRetrievalReport> {
@@ -77,7 +88,7 @@ export class HybridMemoryRetriever implements MemoryRetriever {
 
     this.lastStats = await this.index.sync();
     const queryVector = sparseVector(query);
-    const queryDense = localEmbeddingProvider.enabled ? localEmbeddingProvider.embed(query) : [];
+    const queryDense = this.index.embedQuery(query);
     const normalizedQuery = normalize(query);
     const initiallyRanked = this.index
       .candidates(query, options.candidateLimit)
@@ -160,5 +171,21 @@ export class HybridMemoryRetriever implements MemoryRetriever {
 
   stats() {
     return this.lastStats;
+  }
+
+  async reindex() {
+    if (this.runtime) return withEmbeddingLease(this.runtime, () => this.reindexInternal());
+    return this.reindexInternal();
+  }
+
+  private async reindexInternal() {
+    this.resultCache.clear();
+    this.lastStats = await this.index.sync();
+    return this.lastStats;
+  }
+
+  async generationStatus() {
+    await this.index.initialize();
+    return this.index.generationStatus();
   }
 }

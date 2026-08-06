@@ -69,6 +69,18 @@ test("incremental index skips unchanged files", async () => {
   index.close();
 });
 
+test("generation status initializes a fresh memory index before inspection", async () => {
+  const { directory, lore } = await fixture();
+  const index = new SqliteMemoryIndex(lore, path.join(directory, "index.sqlite"));
+  const retriever = new HybridMemoryRetriever(index);
+
+  const generation = await retriever.generationStatus();
+
+  assert.equal(generation?.retrieval_domain, "kailore");
+  assert.equal(generation?.status, "active");
+  index.close();
+});
+
 test("retrieves one person's records without injecting unrelated people", async () => {
   const { directory, lore } = await fixture();
   const index = new SqliteMemoryIndex(lore, path.join(directory, "index.sqlite"));

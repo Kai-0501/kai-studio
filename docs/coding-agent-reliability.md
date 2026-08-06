@@ -42,6 +42,37 @@ rehydrate, remaining acceptance criteria, and a next action. The receiving role
 validates the schema, repository revision, evidence references, and reservation
 state before acknowledging the handoff.
 
+## One-model residency and logical sessions
+
+Planner, implementer, and reviewer are logical roles, not three simultaneously
+loaded models. A coding job acquires one provider-neutral residency lease for
+the configured coding model and reuses that exact resident weight allocation
+through the sequential planner → implementer → reviewer workflow. Only one role
+may generate at a time. The lease is reference counted and can be shared by
+nested coding operations without reloading the model; the final release starts
+the configured idle-unload timer.
+
+Each role retains a private application checkpoint. Inactive roles default to
+`checkpoint-reconstruct`: their live KV/session state is discarded at a role
+boundary and reconstructed later from the validated checkpoint, current
+repository evidence, and the bounded coordination handoff. A private hot or
+warm transcript is never copied into another role. The only cross-role input is
+the schema-validated handoff and shared task coordination described above.
+
+The default coding context is 16K. A user may choose 32K, but the runtime first
+reduces 32K to 16K under elevated memory pressure. If pressure remains unsafe,
+it follows the configured policy: use a single reconstructable logical agent,
+pause before loading weights, or offer the conservative 16K fallback. These
+decisions occur before inference and are recorded in the durable job status.
+
+Before a coding job starts, Kai Studio may request eviction of idle KaiLore
+embedding and idle diagnostics/orchestration model residencies. Eviction is
+strictly ownership and reference-count gated: active leases, pre-existing
+user-managed runtimes, unsupported providers, and unrelated models are never
+forcibly unloaded. Coding retrieval is burst-scoped and remains isolated from
+KaiLore; it loads only for retrieval and is eligible for idle eviction after
+the lease is released.
+
 ## Implementation-step and non-progress policy
 
 Coding jobs use a counted implementation-step budget rather than a tool-call
@@ -80,7 +111,8 @@ The checkout, private and shared memory, counters, reservations, audit trail,
 and final review state survive normal navigation. Active-job UI reports the
 current role and phase, counted work versus inspection, context use,
 repository revision, reservations, handoffs, blockers, elapsed time, extensions,
-and resource warnings without exposing every low-level invocation.
+resource warnings, shared-model residency, private logical-session state, and
+retrieval residency without exposing every low-level invocation.
 
 ## Diagnostics parsing and models
 
