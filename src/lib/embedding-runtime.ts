@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { EmbeddingRuntimePolicy } from "@/types/settings";
 
-export type EmbeddingRuntimeDomain = "kailore" | "coding";
+export type EmbeddingRuntimeDomain = "kailore" | "coding" | "conversation";
 export type RuntimeOwnership = "kai-managed" | "shared-ollama" | "user-managed-external" | "unsupported";
 export type RuntimeLifecycle = "cold" | "loading" | "warm" | "active" | "idle" | "unloading" | "unavailable";
 
 export type EmbeddingRuntimeDescriptor = {
   domain: EmbeddingRuntimeDomain;
-  role: "kailore.embedding" | "coding.embedding";
+  role: "kailore.embedding" | "coding.embedding" | "conversation.embedding";
   modelId: string;
   modelTag?: string;
   revision?: string;

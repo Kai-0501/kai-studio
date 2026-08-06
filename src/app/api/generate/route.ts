@@ -4,22 +4,10 @@ import {
   readMemory,
 } from "@/lib/memory-store";
 import { readSettings } from "@/lib/settings-store";
-import {
-  compactRetrievalQuery,
-  memoryContextSystemMessage,
-} from "@/lib/memory/prompt";
-import {
-  latestRetrievalReport,
-  kaiLoreMemoryRetriever,
-  rememberRetrievalReport,
-} from "@/lib/memory/runtime";
-import {
-  readWorkingMemory,
-  updateWorkingMemory,
-} from "@/lib/memory/session";
-import type { RetrievedMemory } from "@/types/memory";
 import { recordPerformance } from "@/lib/performance-store";
 import { ensureHuggingFaceModel, isHuggingFaceModel } from "@/lib/local-model-runtime";
+import { assembleChatContext } from "@/lib/context-router/context";
+import type { ContextOverride, ConversationMode } from "@/lib/context-router/types";
 
 export const runtime = "nodejs";
 
@@ -115,6 +103,11 @@ export async function POST(request: NextRequest) {
     memorySessionId?: unknown;
     trackPerformance?: unknown;
     performanceLabel?: unknown;
+    conversationId?: unknown;
+    conversationTitle?: unknown;
+    contextOverride?: unknown;
+    conversationMode?: unknown;
+    temporary?: unknown;
   };
 
   const suppliedMessages = Array.isArray(body.messages)
@@ -192,6 +185,7 @@ export async function POST(request: NextRequest) {
   }
 
   let modelResponse: Response;
+  let contextSummary: Awaited<ReturnType<typeof assembleChatContext>>["summary"] | undefined;
   const huggingFace = isHuggingFaceModel(body.model as string);
 
   try {
@@ -207,52 +201,18 @@ export async function POST(request: NextRequest) {
     );
     const useLongTermMemory =
       body.useLongTermMemory === true && settings.longTermMemoryEnabled;
-    const memorySessionId =
-      typeof body.memorySessionId === "string" &&
-      /^[A-Za-z0-9_-]{1,100}$/.test(body.memorySessionId)
-        ? body.memorySessionId
-        : "anonymous";
     const memory =
       body.useMemory === true && !useLongTermMemory ? await readMemory() : null;
-    let selectedLongTermMemories: RetrievedMemory[] = [];
+    const validOverrides = ["automatic", "conversation-only", "kailore-only", "both", "no-memory"] as const;
+    const validModes = ["normal", "writing", "clean-room", "temporary"] as const;
+    const contextOverride = validOverrides.includes(body.contextOverride as typeof validOverrides[number]) ? body.contextOverride as ContextOverride : settings.contextRouting.defaultMode;
+    const conversationMode = validModes.includes(body.conversationMode as typeof validModes[number]) ? body.conversationMode as ConversationMode : body.temporary === true ? "temporary" : "normal";
+    const conversationId = typeof body.conversationId === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(body.conversationId) ? body.conversationId : undefined;
+    const assembled = await assembleChatContext({ messages: conversationMessages, conversationId, title: typeof body.conversationTitle === "string" ? body.conversationTitle.slice(0, 160) : undefined, mode: conversationMode, override: contextOverride, temporary: body.temporary === true, kaiLoreEnabled: useLongTermMemory && conversationMode !== "temporary" && conversationMode !== "clean-room", settings, signal: request.signal });
+    contextSummary = assembled.summary;
 
-    if (useLongTermMemory) {
-      const retrievalQuery = compactRetrievalQuery(
-        rawMessages.map(({ role, content }) => ({ role, content })),
-      );
-      const report = await (await kaiLoreMemoryRetriever()).retrieve(retrievalQuery);
-      const latestUserMessage =
-        [...rawMessages].reverse().find(({ role }) => role === "user")?.content ??
-        "";
-      const likelyFollowUp =
-        /\b(this|that|these|those|he|she|they|them|it|who|what about|tell me more)\b/i.test(
-          latestUserMessage,
-        );
-      selectedLongTermMemories =
-        report.retrieved.length > 0
-          ? report.retrieved
-          : likelyFollowUp
-            ? readWorkingMemory(memorySessionId)
-            : [];
-      updateWorkingMemory(memorySessionId, selectedLongTermMemories);
-      rememberRetrievalReport(memorySessionId, {
-        ...report,
-        retrieved: selectedLongTermMemories,
-        totalCharacters: selectedLongTermMemories.reduce(
-          (total, item) => total + item.estimatedCharacters,
-          0,
-        ),
-      });
-    }
     const messages: ChatMessage[] = [
-      ...(selectedLongTermMemories.length > 0
-        ? [
-            {
-              role: "system" as const,
-              content: memoryContextSystemMessage(selectedLongTermMemories),
-            },
-          ]
-        : []),
+      ...assembled.systemMessages,
       ...(memory
         ? [
             {
@@ -261,7 +221,7 @@ export async function POST(request: NextRequest) {
             },
           ]
         : []),
-      ...conversationMessages,
+      ...assembled.hotMessages,
     ];
 
     if (huggingFace) {
@@ -399,10 +359,8 @@ export async function POST(request: NextRequest) {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-cache",
-      ...(typeof body.memorySessionId === "string" &&
-      latestRetrievalReport(body.memorySessionId)
-        ? { "X-Kai-Memory-Retrieved": "true" }
-        : {}),
+      ...(contextSummary?.kaiLoreChunks ? { "X-Kai-Memory-Retrieved": "true" } : {}),
+      ...(contextSummary ? { "X-Kai-Context": encodeURIComponent(JSON.stringify(contextSummary)) } : {}),
     },
   });
 }

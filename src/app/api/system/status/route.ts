@@ -25,6 +25,22 @@ export function mapOllamaTagModels(body: OllamaTagsResponse) {
   }));
 }
 
+export function builtInModels(checkedAt: string): SystemStatus["models"] {
+  return [{
+    name: "local-hash",
+    displayName: "Local Memory Embeddings",
+    size: 0,
+    modifiedAt: checkedAt,
+    capabilities: ["embedding"],
+    provider: "manual",
+    source: "manual-registration",
+    ownership: "kai-managed",
+    runtime: "external",
+    status: "available",
+    statusReason: "Built into Kai Studio; no external runtime is required.",
+  }];
+}
+
 export async function GET() {
   const checkedAt = new Date().toISOString();
   const settings = await readSettings();
@@ -50,7 +66,7 @@ export async function GET() {
     quantization: model.quantization,
     architecture: model.architecture,
   }));
-  const allDiscovered = [...new Map([...discoveredModels, ...huggingFaceModels].map((model) => [model.canonicalPath ?? model.name, model])).values()];
+  const allDiscovered = [...new Map([...builtInModels(checkedAt), ...discoveredModels, ...huggingFaceModels].map((model) => [model.canonicalPath ?? model.name, model])).values()];
 
   try {
     const response = await fetch("http://127.0.0.1:11434/api/tags", {

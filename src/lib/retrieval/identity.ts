@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export type RetrievalDomain = "kailore" | "coding";
+export type RetrievalDomain = "kailore" | "coding" | "conversation";
 
 export type EmbeddingIdentity = {
   retrievalDomain: RetrievalDomain;
@@ -33,7 +33,7 @@ export function embeddingIdentity(
     dimensions: options.dimensions ?? 64,
     normalization: options.normalization ?? "l2",
     metric: "cosine",
-    chunkerVersion: options.chunkerVersion ?? (retrievalDomain === "coding" ? "code-aware-v1" : "kailore-v1"),
+    chunkerVersion: options.chunkerVersion ?? (retrievalDomain === "coding" ? "code-aware-v1" : retrievalDomain === "conversation" ? "conversation-natural-v1" : "kailore-v1"),
     schemaVersion: options.schemaVersion ?? 1,
   };
 }

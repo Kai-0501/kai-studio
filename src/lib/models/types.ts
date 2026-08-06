@@ -29,8 +29,10 @@ export type ModelRole =
   | "diagnostics.parser"
   | "progress.assessor"
   | "review.primary"
+  | "context.router"
   | "kailore.embedding"
-  | "coding.embedding";
+  | "coding.embedding"
+  | "conversation.embedding";
 
 
 export type CanonicalImage = { type: "image"; data: string; mimeType?: string };

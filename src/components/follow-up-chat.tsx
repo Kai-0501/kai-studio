@@ -98,6 +98,12 @@ export function FollowUpChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model,
+          useMemory: false,
+          useLongTermMemory: true,
+          conversationId: runId,
+          contextOverride: "automatic",
+          conversationMode: "normal",
+          temporary: false,
           messages: [
             {
               role: "user",

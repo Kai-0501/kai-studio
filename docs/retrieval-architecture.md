@@ -1,10 +1,44 @@
 # Retrieval architecture
 
-Kai Studio has two independent retrieval domains. **KaiLore** retrieves private user memory for ordinary chat and selected personal workflows. **Coding retrieval** retrieves only code and approved build artefacts inside one checked-out repository or one approved greenfield workspace. Neither domain reads from the other.
+Kai Studio has three independent retrieval domains. **KaiLore** retrieves private user memory for ordinary chat and selected personal workflows. **Conversation retrieval** retrieves only older messages from one saved conversation and its active branch. **Coding retrieval** retrieves only code and approved build artefacts inside one checked-out repository or one approved greenfield workspace. No domain reads another domain's index.
+
+## Context Router
+
+Each chat request first keeps a bounded recent-turn window. A configurable
+`context.router` role then selects the smallest sufficient additional context:
+none, recent turns only, older messages from this conversation, KaiLore, or a
+bounded hybrid. The router returns a validated JSON plan; it never answers the
+user and its runtime lease is released before the answer model runs. Invalid or
+unavailable router output falls back to a deterministic, fail-closed policy.
+
+The user can override routing per message with **Automatic**, **Conversation
+only**, **KaiLore only**, **Both**, or **No memory**. Normal, Writing,
+Clean-room, and Temporary modes provide additional policy boundaries. Writing
+can bias toward local conversation continuity. Clean-room and Temporary always
+disable durable retrieval. Temporary chats are never saved, archived, indexed,
+or checkpointed and never query KaiLore.
+
+## Conversation retrieval
+
+Saved conversations are migrated lazily and non-destructively to stable message
+IDs, parent links, revision numbers, content hashes, and an explicit active
+branch. The migration is deterministic and written atomically. Older messages
+are chunked at natural paragraph and heading boundaries into a dedicated SQLite
+index. Every chunk retains conversation ID, branch ID, exact source message IDs,
+sequence range, timestamp, content hash, and index generation.
+
+Retrieval is scoped to one conversation and its active branch. Before use, Kai
+Studio rehydrates the exact source messages and rejects deleted, edited, stale,
+or wrong-branch evidence. The newest six messages remain in the hot window and
+are excluded from cold archive results to prevent duplicate injection.
+Application-owned structured checkpoints preserve topics, entities, decisions,
+constraints, unresolved questions, and source provenance without relying on a
+model-generated summary. Deleted conversations also remove their conversation
+index entries.
 
 ## Model assignments and fallbacks
 
-Settings exposes separate `KaiLore Embedding` and `Coding Embedding` assignments. The current built-in adapter is a deterministic local hash embedder. It is deliberately explicit: assigning a generative model does not make it an embedding model. Until an adapter for that selected model exists, KaiLore reports an unavailable embedding assignment and coding retrieval stays lexical-only. Kai Studio never silently substitutes a model.
+Settings exposes separate `KaiLore Embedding`, `Conversation Embedding`, and `Coding Embedding` assignments. The current built-in adapter is a deterministic local hash embedder. It is deliberately explicit: assigning a generative model does not make it an embedding model. Until an adapter for that selected model exists, the affected domain reports an unavailable assignment or documented lexical fallback. Kai Studio never silently substitutes a model.
 
 Each index generation records its domain, model ID and revision, dimensions, normalisation, metric, chunker version, schema version, corpus version, timestamps, and lifecycle status. A changed identity produces a new staged generation; coding retrieval activates it only after indexing finishes. Legacy generations remain available for audit.
 
@@ -22,7 +56,7 @@ Embedding adapters are procured through an explicit compatibility contract: stab
 
 ## Embedding runtime lifecycle
 
-KaiLore and coding embeddings use the shared provider-neutral `EmbeddingRuntimeManager`. A retrieval operation acquires a scoped lease keyed by domain, model, and revision; overlapping requests reuse the same residency and only the final release can schedule idle eviction. No embedding runtime is loaded at application startup.
+KaiLore, conversation, and coding embeddings use the shared provider-neutral `EmbeddingRuntimeManager`. A retrieval operation acquires a scoped lease keyed by domain, model, and revision; overlapping requests reuse the same residency and only the final release can schedule idle eviction. No embedding runtime is loaded at application startup.
 
 The manager records ownership (`kai-managed`, `shared-ollama`, `user-managed-external`, or `unsupported`), lifecycle, refcount, last-use time, unload deadline, and the last health error. KaiLore defaults to a short 120-second idle retention. Coding defaults to 300 seconds and can remain warm across planner/implementer/reviewer transitions. Settings bound retention and can retain a runtime during indexing. Memory-pressure eviction only targets idle embedding leases and never active leases or unrelated model roles.
 

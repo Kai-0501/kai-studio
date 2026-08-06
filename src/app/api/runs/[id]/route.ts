@@ -1,5 +1,5 @@
 import { deleteRun, findRun, updateRunConversation } from "@/lib/run-store";
-import type { DiagnosticRecommendation, FollowUpMessage } from "@/types/run";
+import type { ConversationCheckpoint, ConversationMessage, DiagnosticRecommendation, FollowUpMessage } from "@/types/run";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +30,9 @@ export async function PATCH(
     diagnosticsRecommendations?: unknown;
     diagnosticsPlan?: unknown;
     diagnosticSelectedRecommendationIds?: unknown;
+    messages?: unknown;
+    activeBranchId?: unknown;
+    checkpoint?: unknown;
   };
 
   if (
@@ -77,9 +80,23 @@ export async function PATCH(
         message.content.trim()) &&
       ("createdAt" in message && typeof message.createdAt === "string"),
     );
+  const messagesValid =
+    body.messages === undefined ||
+    (Array.isArray(body.messages) &&
+      body.messages.length <= 500 &&
+      body.messages.every(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          "id" in message && typeof message.id === "string" &&
+          "branchId" in message && typeof message.branchId === "string" &&
+          "role" in message && (message.role === "user" || message.role === "assistant") &&
+          "content" in message && typeof message.content === "string" &&
+          "contentHash" in message && typeof message.contentHash === "string",
+      ));
 
   if (
-    !valid ||
+    !valid || !messagesValid ||
     !recommendationsValid ||
     (body.output !== undefined &&
       (typeof body.output !== "string" || !body.output.trim())) ||
@@ -105,6 +122,9 @@ export async function PATCH(
     && body.diagnosticsRecommendations === undefined
     && body.diagnosticsPlan === undefined
     && body.diagnosticSelectedRecommendationIds === undefined
+    && body.messages === undefined
+    && body.activeBranchId === undefined
+    && body.checkpoint === undefined
   ) {
     return Response.json({ error: "No conversation changes supplied." }, { status: 400 });
   }
@@ -122,6 +142,9 @@ export async function PATCH(
     ...(Array.isArray(body.diagnosticSelectedRecommendationIds)
       ? { diagnosticSelectedRecommendationIds: body.diagnosticSelectedRecommendationIds as string[] }
       : {}),
+    ...(Array.isArray(body.messages) ? { messages: body.messages as ConversationMessage[] } : {}),
+    ...(typeof body.activeBranchId === "string" ? { activeBranchId: body.activeBranchId } : {}),
+    ...(body.checkpoint && typeof body.checkpoint === "object" ? { checkpoint: body.checkpoint as ConversationCheckpoint } : {}),
   });
 
   if (!updated) {

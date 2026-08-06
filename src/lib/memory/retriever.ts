@@ -184,7 +184,8 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     return this.lastStats;
   }
 
-  generationStatus() {
+  async generationStatus() {
+    await this.index.initialize();
     return this.index.generationStatus();
   }
 }

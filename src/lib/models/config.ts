@@ -27,8 +27,10 @@ const defaultRoutes: Record<ModelRole, RoleRoute> = {
   "diagnostics.parser": { primary: "local.gemma4-12b-editor", requiredCapabilities: ["chat", "structured-output"], localOnly: true },
   "progress.assessor": { primary: "local.gemma4-12b-editor", requiredCapabilities: ["chat", "structured-output"], localOnly: true },
   "review.primary": { primary: "local.gemma4-31b-security", requiredCapabilities: ["repository-review", "structured-output"], localOnly: true },
+  "context.router": { primary: "local.gemma4-12b-editor", requiredCapabilities: ["chat", "structured-output"], localOnly: true },
   "kailore.embedding": { primary: "local.memory-hash-embedding", requiredCapabilities: ["embedding"], localOnly: true },
   "coding.embedding": { primary: "local.memory-hash-embedding", requiredCapabilities: ["embedding"], localOnly: true },
+  "conversation.embedding": { primary: "local.memory-hash-embedding", requiredCapabilities: ["embedding"], localOnly: true },
 };
 
 function configuredModels() {

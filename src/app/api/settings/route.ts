@@ -31,6 +31,7 @@ export async function PUT(request: Request) {
     embeddingRuntime?: unknown;
     codingRuntime?: unknown;
     imageGeneration?: unknown;
+    contextRouting?: unknown;
   };
 
   if (
@@ -50,6 +51,14 @@ export async function PUT(request: Request) {
   if (body.embeddingRuntime !== undefined && (typeof body.embeddingRuntime !== "object" || body.embeddingRuntime === null)) return Response.json({ error: "Embedding runtime settings are invalid." }, { status: 400 });
   if (body.codingRuntime !== undefined && (typeof body.codingRuntime !== "object" || body.codingRuntime === null)) return Response.json({ error: "Coding runtime settings are invalid." }, { status: 400 });
   if (body.imageGeneration !== undefined && (typeof body.imageGeneration !== "object" || body.imageGeneration === null)) return Response.json({ error: "Image-generation settings are invalid." }, { status: 400 });
+  if (body.contextRouting !== undefined && (typeof body.contextRouting !== "object" || body.contextRouting === null)) return Response.json({ error: "Context-routing settings are invalid." }, { status: 400 });
+  if (body.contextRouting && typeof body.contextRouting === "object") {
+    const policy = body.contextRouting as Partial<import("@/types/settings").ContextRoutingSettings>;
+    if (!policy.defaultMode || !["automatic", "conversation-only", "kailore-only", "both", "no-memory"].includes(policy.defaultMode)) return Response.json({ error: "Default memory mode is invalid." }, { status: 400 });
+    for (const value of [policy.recentTurnTokenBudget, policy.conversationTokenBudget, policy.kaiLoreTokenBudget, policy.hybridTokenBudget]) if (typeof value !== "number" || value < 500 || value > 20_000) return Response.json({ error: "Context budgets must be between 500 and 20,000 tokens." }, { status: 400 });
+    if (typeof policy.routerIdleTimeoutSeconds !== "number" || policy.routerIdleTimeoutSeconds < 5 || policy.routerIdleTimeoutSeconds > 300) return Response.json({ error: "Router idle timeout must be between 5 and 300 seconds." }, { status: 400 });
+    if (typeof policy.automaticCheckpointing !== "boolean" || typeof policy.writingContinuityBias !== "boolean" || typeof policy.showContextSourceIndicator !== "boolean" || policy.deterministicFallback !== "smallest-sufficient") return Response.json({ error: "Context-routing policy is incomplete." }, { status: 400 });
+  }
   if (body.imageGeneration && typeof body.imageGeneration === "object") {
     const image = body.imageGeneration as Partial<import("@/types/settings").ImageGenerationSettings>;
     if (typeof image.autoReview !== "boolean" || ![0, 1, 2].includes(image.maxCorrectiveRetries ?? -1) || typeof image.mandatoryConfidenceThreshold !== "number" || image.mandatoryConfidenceThreshold < 0 || image.mandatoryConfidenceThreshold > 1 || typeof image.retryPreferredRequirements !== "boolean" || typeof image.reviewTimeoutSeconds !== "number" || image.reviewTimeoutSeconds < 10 || image.reviewTimeoutSeconds > 180 || typeof image.saveAllAttempts !== "boolean" || typeof image.preserveCompiledPrompts !== "boolean" || !["return-unverified", "fail"].includes(image.visionUnavailableBehaviour ?? "")) return Response.json({ error: "Image-generation settings are invalid." }, { status: 400 });
@@ -106,5 +115,6 @@ export async function PUT(request: Request) {
     ...(body.embeddingRuntime && typeof body.embeddingRuntime === "object" ? { embeddingRuntime: body.embeddingRuntime as import("@/types/settings").EmbeddingRuntimeSettings } : {}),
     ...(body.codingRuntime && typeof body.codingRuntime === "object" ? { codingRuntime: body.codingRuntime as import("@/types/settings").CodingRuntimeSettings } : {}),
     ...(body.imageGeneration && typeof body.imageGeneration === "object" ? { imageGeneration: body.imageGeneration as import("@/types/settings").ImageGenerationSettings } : {}),
+    ...(body.contextRouting && typeof body.contextRouting === "object" ? { contextRouting: body.contextRouting as import("@/types/settings").ContextRoutingSettings } : {}),
   }));
 }

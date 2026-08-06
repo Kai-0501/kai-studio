@@ -20,6 +20,7 @@ import {
 import type { FollowUpMessage } from "@/types/run";
 import type { KaiMemoryStatus } from "@/types/memory";
 import type { CodingRuntimeSnapshot } from "@/lib/coding-runtime";
+import type { ContextOverride, ContextSourceSummary, ConversationMode } from "@/lib/context-router/types";
 import Link from "next/link";
 
 type ChatMessage = {
@@ -28,6 +29,7 @@ type ChatMessage = {
   content: string;
   images?: ImageAttachment[];
   generatedImage?: string;
+  contextSource?: ContextSourceSummary;
   imageGeneration?: { id: string; status: "complete" | "unverified"; stages: string[]; attempts: Array<{ number: number; status: string; review?: { score: number; overallNotes: string }; compiledPrompt?: string; provider?: string; model?: string }>; intent?: { subject?: string; requirements?: Array<{ id: string; description: string; importance: string }> } };
 };
 
@@ -67,6 +69,7 @@ export function StudioChat({
   const [model, setModel] = useState("gemma4:26b-mlx");
   const [modelOptions, setModelOptions] = useState(fallbackModelOptions);
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(false);
+  const [showContextSourceIndicator, setShowContextSourceIndicator] = useState(true);
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState(initialPrompt);
@@ -85,6 +88,8 @@ export function StudioChat({
   const [runId, setRunId] = useState("");
   const [memoryStatus, setMemoryStatus] = useState<KaiMemoryStatus | null>(null);
   const [isTemporary, setIsTemporary] = useState(false);
+  const [contextOverride, setContextOverride] = useState<ContextOverride>("automatic");
+  const [conversationMode, setConversationMode] = useState<Exclude<ConversationMode, "temporary">>("normal");
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [buildProgress, setBuildProgress] = useState<string[]>([]);
@@ -113,6 +118,7 @@ export function StudioChat({
           defaultModel?: string;
           modelAssignments?: { chat?: string; coding?: string };
           longTermMemoryEnabled?: boolean;
+          contextRouting?: { defaultMode?: ContextOverride; showContextSourceIndicator?: boolean };
         };
         const status = await statusResponse.json() as { models?: Array<{ name: string; displayName?: string; provider?: string; status?: string }>; discoveredModels?: Array<{ name: string; displayName?: string; provider?: string; status?: string }>; huggingFaceModels?: Array<{ name: string; displayName?: string; provider?: string; status?: string }> };
         const installed = [...(status.models ?? []), ...(status.discoveredModels ?? []), ...(status.huggingFaceModels ?? [])]
@@ -124,6 +130,8 @@ export function StudioChat({
           : settings.modelAssignments?.chat ?? settings.defaultModel;
         if (preferred) setModel(preferred);
         setLongTermMemoryEnabled(settings.longTermMemoryEnabled === true);
+        if (settings.contextRouting?.defaultMode) setContextOverride(settings.contextRouting.defaultMode);
+        setShowContextSourceIndicator(settings.contextRouting?.showContextSourceIndicator !== false);
       })
       .catch(() => {
         // Keep 26B as the balanced chat default.
@@ -505,9 +513,14 @@ export function StudioChat({
           model,
           trackPerformance: !isTemporary,
           performanceLabel: userContent,
-          useMemory: !longTermMemoryEnabled,
+          useMemory: false,
           useLongTermMemory: longTermMemoryEnabled,
           memorySessionId: sessionIdRef.current,
+          conversationId: runId || sessionIdRef.current,
+          conversationTitle: conversationBeforeAnswer[0]?.content.slice(0, 160),
+          contextOverride,
+          conversationMode: isTemporary ? "temporary" : conversationMode,
+          temporary: isTemporary,
           messages: conversationBeforeAnswer.map((message) => ({
             role: message.role,
             content: message.content,
@@ -523,6 +536,7 @@ export function StudioChat({
         throw new Error(body.error || "Gemma could not answer.");
       }
       if (!response.body) throw new Error("Gemma returned an empty response.");
+      const contextSource = parseContextSource(response.headers.get("X-Kai-Context"));
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -532,7 +546,7 @@ export function StudioChat({
         completeAnswer += decoder.decode(value, { stream: true });
         setMessages([
           ...conversationBeforeAnswer,
-          { id: assistantId, role: "assistant", content: completeAnswer },
+          { id: assistantId, role: "assistant", content: completeAnswer, contextSource },
         ]);
       }
 
@@ -541,6 +555,7 @@ export function StudioChat({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            id: sessionIdRef.current,
             workflowId: "general-intelligence",
             inputLabel: "Chat",
             accountName: userContent.slice(0, 72),
@@ -726,9 +741,14 @@ export function StudioChat({
           model: nextModel,
           trackPerformance: !isTemporary,
           performanceLabel: context[0]?.content ?? "Regenerated chat response",
-          useMemory: !longTermMemoryEnabled,
+          useMemory: false,
           useLongTermMemory: longTermMemoryEnabled,
           memorySessionId: sessionIdRef.current,
+          conversationId: runId || sessionIdRef.current,
+          conversationTitle: context[0]?.content.slice(0, 160),
+          contextOverride,
+          conversationMode: isTemporary ? "temporary" : conversationMode,
+          temporary: isTemporary,
           messages: context.map((message) => ({
             role: message.role,
             content: message.content,
@@ -744,6 +764,7 @@ export function StudioChat({
         throw new Error(body.error || "Kai Studio could not regenerate that reply.");
       }
       if (!response.body) throw new Error("Kai Studio returned an empty response.");
+      const contextSource = parseContextSource(response.headers.get("X-Kai-Context"));
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -753,13 +774,13 @@ export function StudioChat({
         completeAnswer += decoder.decode(value, { stream: true });
         setMessages([
           ...context,
-          { id: assistantId, role: "assistant", content: completeAnswer },
+          { id: assistantId, role: "assistant", content: completeAnswer, contextSource },
         ]);
       }
 
       const regenerated = [
         ...context,
-        { id: assistantId, role: "assistant" as const, content: completeAnswer },
+        { id: assistantId, role: "assistant" as const, content: completeAnswer, contextSource },
       ];
       setMessages(regenerated);
 
@@ -841,7 +862,7 @@ export function StudioChat({
                 ? "border-sky-400/30 bg-sky-400/15 text-sky-200"
                 : "border-white/10 text-slate-400 hover:bg-white/5 hover:text-white"
             }`}
-            title="Uses Kai Memory but does not save this conversation"
+            title="Keeps only the bounded recent chat in memory and does not save this conversation"
           >
             ◌ Temporary
           </button>
@@ -868,7 +889,7 @@ export function StudioChat({
             </h1>
             <p className="mt-3 max-w-lg text-sm leading-6 text-slate-500">
               {isTemporary
-                ? "Kai Memory is available, but this conversation will disappear when you leave."
+                ? "Only this chat's recent turns are available, and the conversation disappears when you leave."
                 : "Chat with your configured local models. Attach a photo whenever visual context helps."}
             </p>
           </div>
@@ -942,6 +963,17 @@ export function StudioChat({
                           {message.content}
                         </MarkdownResponse>
                       </div>
+                      {showContextSourceIndicator && message.contextSource ? (
+                        <details className="ml-11 mt-3 w-fit max-w-full rounded-full border border-sky-300/15 bg-sky-400/[0.04] px-3 py-1.5 text-[11px] text-slate-500">
+                          <summary className="cursor-pointer list-none text-sky-200/80">
+                            Context · {message.contextSource.label}
+                          </summary>
+                          <p className="mt-2 max-w-md pb-1 leading-5">
+                            {message.contextSource.reason} · {message.contextSource.approximateTokens.toLocaleString()} estimated retrieved tokens
+                            {message.contextSource.fallbackUsed ? " · safe fallback used" : ""}
+                          </p>
+                        </details>
+                      ) : null}
                       {isApplyingBuild && buildProgress.length ? <div className="ml-11 mt-4 space-y-2 rounded-2xl border border-sky-300/15 bg-sky-400/5 p-4 text-sm">{buildProgress.map((step, stepIndex) => <p key={`${stepIndex}-${step}`} className={stepIndex === buildProgress.length - 1 ? "animate-pulse text-sky-200" : "text-slate-500"}>{step}</p>)}</div> : null}
                       {activeLoopState ? <div className="ml-11 mt-3 grid gap-2 rounded-xl border border-sky-300/10 bg-sky-400/[0.035] p-3 text-xs text-slate-500 sm:grid-cols-2"><p>{activeLoopState.currentRole} · {activeLoopState.currentPhase}</p><p>{activeLoopState.elapsedMinutes.toFixed(1)} / {activeLoopState.executionBudgetMinutes || "—"} min</p><p>Implementation: {activeLoopState.stepCount} / {activeLoopState.stepLimit}</p><p>Inspection actions: {activeLoopState.inspectionCount}</p><p>Context: {Math.round(activeLoopState.contextUtilization * 100)}%</p><p>Reservations: {activeLoopState.activeReservations.length} · handoffs: {activeLoopState.pendingHandoffs}</p><p className="sm:col-span-2 text-slate-400">Latest progress: {activeLoopState.latestMeaningfulProgress}</p>{activeLoopState.currentBlockers.length ? <p className="sm:col-span-2 text-amber-200/70">Blocker: {activeLoopState.currentBlockers.at(-1)}</p> : null}{activeLoopState.resourceWarning ? <p className="sm:col-span-2 text-red-200/70">Resource warning: {activeLoopState.resourceWarning}</p> : null}<p className="sm:col-span-2">Automatic time: +{activeLoopState.automaticExtensionMinutes} min · approved time: +{activeLoopState.userExtensionMinutes} min</p></div> : null}
                       {codingRuntimeState ? <div className="ml-11 mt-3 rounded-xl border border-sky-300/10 bg-sky-400/[0.025] p-3 text-xs text-slate-500"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium text-sky-200">Shared coding runtime</p><p>{codingRuntimeState.plan.codingModel.displayName} · {codingRuntimeState.weightResidency} · {codingRuntimeState.memoryPressure} pressure</p></div><p className="mt-2">{codingRuntimeState.sessions.map((session) => `${session.role}: ${session.status} / ${session.kvCache} / ${Math.round(session.contextLimit / 1024)}K`).join(" · ")}</p><p className="mt-2">Coding retrieval: {codingRuntimeState.codingEmbeddingStatus} · KaiLore retrieval: {codingRuntimeState.kaiLoreEmbeddingStatus}</p>{codingRuntimeState.modelsReleasedBeforeCoding.length ? <p className="mt-2">Released before coding: {codingRuntimeState.modelsReleasedBeforeCoding.join(", ")}</p> : null}{codingRuntimeState.fallbackMode ? <p className="mt-2 text-amber-200/70">Fallback: {codingRuntimeState.fallbackMode}</p> : null}</div> : null}
@@ -1124,6 +1156,7 @@ export function StudioChat({
               )}
 
               {composerMode === "chat" ? (
+              <div className="flex items-center gap-1">
               <label className="relative">
                 <span className="sr-only">Gemma model</span>
                 <select
@@ -1146,6 +1179,27 @@ export function StudioChat({
                   ▾
                 </span>
               </label>
+              {!repositoryHandoff ? <>
+                <label className="relative">
+                  <span className="sr-only">Conversation mode</span>
+                  <select value={conversationMode} onChange={(event) => setConversationMode(event.target.value as Exclude<ConversationMode, "temporary">)} disabled={isTemporary || isRunning} className="appearance-none rounded-full border border-sky-400/15 bg-sky-400/[0.06] py-2 pl-3 pr-6 text-xs text-sky-200/80 outline-none disabled:opacity-40">
+                    <option value="normal" className="bg-[#181c24]">Normal</option>
+                    <option value="writing" className="bg-[#181c24]">Writing</option>
+                    <option value="clean-room" className="bg-[#181c24]">Clean room</option>
+                  </select>
+                </label>
+                <label className="relative">
+                  <span className="sr-only">Memory sources</span>
+                  <select value={contextOverride} onChange={(event) => setContextOverride(event.target.value as ContextOverride)} disabled={isTemporary || isRunning || conversationMode === "clean-room"} className="appearance-none rounded-full border border-sky-400/15 bg-sky-400/[0.06] py-2 pl-3 pr-6 text-xs text-sky-200/80 outline-none disabled:opacity-40">
+                    <option value="automatic" className="bg-[#181c24]">Memory · Auto</option>
+                    <option value="conversation-only" className="bg-[#181c24]">Conversation only</option>
+                    <option value="kailore-only" className="bg-[#181c24]">KaiLore only</option>
+                    <option value="both" className="bg-[#181c24]">Both</option>
+                    <option value="no-memory" className="bg-[#181c24]">No memory</option>
+                  </select>
+                </label>
+              </> : null}
+              </div>
               ) : (
                 <span className="rounded-full px-3 py-2 text-xs font-medium text-sky-300">
                   Image generation
@@ -1170,7 +1224,7 @@ export function StudioChat({
         </form>
         <p className="pointer-events-auto mx-auto mt-2 max-w-3xl text-center text-[10px] text-slate-700">
           {isTemporary
-            ? "Temporary chat · Kai Memory stays active · nothing is saved to History."
+            ? "Temporary chat · recent turns only · nothing is saved or indexed."
             : composerMode === "image"
             ? "Kai Studio plans, validates, generates, and reviews every image locally."
             : repositoryHandoff
@@ -1184,4 +1238,14 @@ export function StudioChat({
 
 function modelLabel(model: string) {
   return model.replace(/^hf:/, "").replace(/[-_:]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function parseContextSource(value: string | null): ContextSourceSummary | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value)) as ContextSourceSummary;
+    return parsed && typeof parsed.label === "string" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }

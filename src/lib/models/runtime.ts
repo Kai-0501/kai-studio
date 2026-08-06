@@ -32,8 +32,10 @@ const assignmentKeyByRole: Partial<Record<ModelRole, keyof ModelAssignments>> = 
   "progress.assessor": "progressAssessor",
   "orchestrator.cloud": "orchestration",
   "review.primary": "review",
+  "context.router": "contextRouter",
   "kailore.embedding": "kaiLoreEmbedding",
   "coding.embedding": "codingEmbedding",
+  "conversation.embedding": "conversationEmbedding",
   "chat.default": "chat",
 };
 
@@ -49,7 +51,7 @@ export async function resolveRole(role: ModelRole, signal?: AbortSignal) {
   const assignedProviderModel = assignmentKey ? settings.modelAssignments[assignmentKey] : undefined;
   const template = modelRegistry.get(route.primary);
   if (assignedProviderModel && template) {
-    const isEmbeddingRole = role === "kailore.embedding" || role === "coding.embedding";
+    const isEmbeddingRole = role === "kailore.embedding" || role === "coding.embedding" || role === "conversation.embedding";
     // Embedding is intentionally capability-specific. A generative model may be
     // selected in Settings for a future adapter, but it must not be treated as
     // an embedding runtime until that adapter explicitly declares support.
@@ -102,7 +104,7 @@ export async function generateForRole(request: GenerateRequest): Promise<Generat
       role: request.role,
       workflow: request.workflow,
       minimumWarmSeconds: request.role === "coder.primary" ? 30 : 10,
-      idleTimeoutSeconds: request.role === "coder.primary" ? settings.codingRuntime.modelIdleTimeoutSeconds : 90,
+      idleTimeoutSeconds: request.role === "coder.primary" ? settings.codingRuntime.modelIdleTimeoutSeconds : request.role === "context.router" ? settings.contextRouting.routerIdleTimeoutSeconds : 90,
     });
     let result: GenerateResult;
     try {

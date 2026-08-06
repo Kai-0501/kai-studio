@@ -11,6 +11,8 @@ The system keeps distinct resources separate:
 | Resource | Location | Lifetime | Purpose |
 | --- | --- | --- | --- |
 | Recent conversation | Active model context | Current chat | Conversational continuity |
+| Conversation checkpoint | Local run store | Saved conversation lifetime | Structured continuity across long chats |
+| Conversation archive | Dedicated SQLite index | Saved conversation lifetime | Exact retrieval from older turns in one active branch |
 | Session working memory | Bounded RAM cache | Up to one hour | Reuse selected long-term records for follow-ups |
 | Hot retrieval cache | Bounded RAM cache | Configurable TTL | Avoid repeated parsing/ranking work |
 | Memory Markdown | SSD | Until the user edits it | Canonical human-editable long-term memory |
@@ -20,6 +22,24 @@ The system keeps distinct resources separate:
 The complete corpus is never assembled into a prompt. SQLite returns a bounded
 candidate set and the retriever applies a second ranking and budget pass before
 prompt construction.
+
+## Conversation memory and KaiLore are different systems
+
+Conversation memory records what was said in one saved chat. KaiLore records
+durable, user-managed facts and preferences. They have separate model roles,
+embedding assignments, SQLite generations, retention rules, provenance, and
+deletion paths. The Context Router may select either or both, but a hybrid
+request remains bounded by one combined token budget and the UI can disclose
+which sources contributed.
+
+Conversation evidence is inserted as explicitly untrusted context. Current user
+instructions outrank it. Stable source IDs and hashes allow exact rehydration;
+edits, deletions, and branch changes invalidate stale chunks rather than letting
+old content leak into a response.
+
+Temporary chats are an isolation boundary, not merely a hidden-history option.
+They use only the current request and bounded recent turns. They do not save a
+run, create a checkpoint, write an archive/index entry, or retrieve KaiLore.
 
 ## Phase 1 data flow
 

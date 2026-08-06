@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     : undefined;
 
   const run: SavedRun = {
-    id: randomUUID(),
+    id: typeof body.id === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(body.id) ? body.id : randomUUID(),
     title,
     workflowId,
     workflowName: workflows[workflowId],

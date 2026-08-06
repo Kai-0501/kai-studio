@@ -19,7 +19,9 @@ const defaultSettings: KaiStudioSettings = {
   embeddingRuntime: {
     kaiLore: { idleTimeoutSeconds: 120, minimumWarmSeconds: 30, retainDuringIndexing: true, retainAcrossTransitions: false, evictOnMemoryPressure: true },
     coding: { idleTimeoutSeconds: 300, minimumWarmSeconds: 60, retainDuringIndexing: true, retainAcrossTransitions: true, evictOnMemoryPressure: true },
+    conversation: { idleTimeoutSeconds: 120, minimumWarmSeconds: 15, retainDuringIndexing: true, retainAcrossTransitions: false, evictOnMemoryPressure: true },
   },
+  contextRouting: { defaultMode: "automatic", recentTurnTokenBudget: 6000, conversationTokenBudget: 5000, kaiLoreTokenBudget: 3500, hybridTokenBudget: 7500, routerIdleTimeoutSeconds: 45, automaticCheckpointing: true, writingContinuityBias: true, deterministicFallback: "smallest-sufficient", showContextSourceIndicator: true },
   codingRuntime: {
     executionMode: "multi-agent-sequential",
     inactiveAgentCachePolicy: "checkpoint-reconstruct",
@@ -56,15 +58,17 @@ export async function readSettings(): Promise<KaiStudioSettings> {
       ...nonLegacyAssignments,
       kaiLoreEmbedding: savedAssignments.kaiLoreEmbedding ?? legacyEmbedding ?? defaultSettings.modelAssignments.kaiLoreEmbedding,
       codingEmbedding: savedAssignments.codingEmbedding ?? legacyEmbedding ?? defaultSettings.modelAssignments.codingEmbedding,
+      conversationEmbedding: savedAssignments.conversationEmbedding ?? legacyEmbedding ?? defaultSettings.modelAssignments.conversationEmbedding,
     };
     const savedRuntime = saved.embeddingRuntime as Partial<KaiStudioSettings["embeddingRuntime"]> | undefined;
     const runtime = {
       kaiLore: { ...defaultSettings.embeddingRuntime.kaiLore, ...(savedRuntime?.kaiLore ?? {}) },
       coding: { ...defaultSettings.embeddingRuntime.coding, ...(savedRuntime?.coding ?? {}) },
+      conversation: { ...defaultSettings.embeddingRuntime.conversation, ...(savedRuntime?.conversation ?? {}) },
     };
     const codingRuntime = { ...defaultSettings.codingRuntime, ...(saved.codingRuntime ?? {}) };
     const imageGeneration = { ...defaultSettings.imageGeneration, ...(saved.imageGeneration ?? {}) };
-    return { ...defaultSettings, ...saved, embeddingRuntime: runtime, codingRuntime, imageGeneration, modelAssignments: assignments, modelSearchRoots: Array.isArray(saved.modelSearchRoots) ? saved.modelSearchRoots.filter((root): root is string => typeof root === "string") : [] };
+    return { ...defaultSettings, ...saved, embeddingRuntime: runtime, codingRuntime, imageGeneration, contextRouting: { ...defaultSettings.contextRouting, ...(saved.contextRouting ?? {}) }, modelAssignments: assignments, modelSearchRoots: Array.isArray(saved.modelSearchRoots) ? saved.modelSearchRoots.filter((root): root is string => typeof root === "string") : [] };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultSettings;
     throw error;

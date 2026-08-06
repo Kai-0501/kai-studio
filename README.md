@@ -14,9 +14,13 @@ outputs, and memory stay local.
 
 - **Desktop chat** with automatically discovered local models from Ollama and
   Hugging Face-compatible runtimes
-- **Temporary chats** that use memory without adding history
+- **Temporary chats** with recent-turn continuity only: no history, archive,
+  checkpoint, conversation index, or KaiLore retrieval
 - **Tiered local memory** with human-editable Markdown records and local
   hybrid retrieval
+- **Retrieval-aware conversation continuity** with a configurable Context
+  Router, bounded recent turns, exact older-message rehydration, branch-safe
+  archives, and explicit per-message source controls
 - **Local dictation** using Parakeet TDT 0.6B v2
 - **Bounded local image generation** through a model-configurable pipeline:
   structured visual intent, deterministic validation, generation, vision review,
@@ -80,6 +84,9 @@ local routing, persistence, and retrieval.
 
 For the memory design, see
 [docs/memory-architecture.md](docs/memory-architecture.md).
+
+For retrieval-domain isolation, context routing, and conversation archives, see
+[docs/retrieval-architecture.md](docs/retrieval-architecture.md).
 
 For secure repository automation and bounded coding context, see
 [docs/secure-build-architecture.md](docs/secure-build-architecture.md).

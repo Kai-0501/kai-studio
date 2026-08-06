@@ -9,6 +9,20 @@ export type KaiStudioSettings = {
   embeddingRuntime: EmbeddingRuntimeSettings;
   codingRuntime: CodingRuntimeSettings;
   imageGeneration: ImageGenerationSettings;
+  contextRouting: ContextRoutingSettings;
+};
+
+export type ContextRoutingSettings = {
+  defaultMode: "automatic" | "conversation-only" | "kailore-only" | "both" | "no-memory";
+  recentTurnTokenBudget: number;
+  conversationTokenBudget: number;
+  kaiLoreTokenBudget: number;
+  hybridTokenBudget: number;
+  routerIdleTimeoutSeconds: number;
+  automaticCheckpointing: boolean;
+  writingContinuityBias: boolean;
+  deterministicFallback: "smallest-sufficient";
+  showContextSourceIndicator: boolean;
 };
 
 export type CodingRuntimeSettings = {
@@ -23,6 +37,7 @@ export type CodingRuntimeSettings = {
 export type EmbeddingRuntimeSettings = {
   kaiLore: EmbeddingRuntimePolicy;
   coding: EmbeddingRuntimePolicy;
+  conversation: EmbeddingRuntimePolicy;
 };
 
 export type ImageGenerationSettings = {
@@ -68,6 +83,8 @@ export type ModelAssignments = {
   embedding?: string;
   kaiLoreEmbedding: string;
   codingEmbedding: string;
+  contextRouter: string;
+  conversationEmbedding: string;
 };
 
 export type LocalModel = {
